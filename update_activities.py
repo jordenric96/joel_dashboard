@@ -13,11 +13,7 @@ ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
 ACTIVITY_DETAIL_URL = "https://www.strava.com/api/v3/activities"
 
 # --- ZELF GEDEFINIEERDE UITRUSTING (SCHOENEN) ---
-MANUAL_GEAR_MAP = {
-    'g20191215': 'Adidas Adistar',       
-    'g28340688': 'New Balance Hierro V9',       
-    'g20403195': 'Meindl',       
-    'g13828248': 'New Balance Hierro V7'        
+MANUAL_GEAR_MAP = {      
 }
 
 def get_access_token():
@@ -81,18 +77,12 @@ def process_data():
     clean_data = []
     api_calls = 0
     
-    for a in all_activities:
+   for a in all_activities:
         dt = a['start_date_local'].replace('T', ' ').replace('Z', '')
         sport_type = translate_type(a['type'])
         
         gear_id = a.get('gear_id')
         gear_name = MANUAL_GEAR_MAP.get(gear_id, gear_id) if gear_id else ""
-        
-        if sport_type in ['Fietsrit', 'Virtuele fietsrit']:
-            if dt < "2025-05-09":
-                gear_name = "Proracer"
-            else:
-                gear_name = "Merida Scultura 5000"
                 
         cal = existing_cals.get(dt, 0)
         
