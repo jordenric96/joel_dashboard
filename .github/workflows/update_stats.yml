@@ -1,14 +1,13 @@
-name: Update Strava Data
+name: Update Strava Data Joel
 
 on:
   schedule:
-    # Tijden zijn in UTC (1 uur vroeger dan Belgische wintertijd)
-    - cron: '0 11 * * *'   # Draait om 12:00 's middags CET
-    - cron: '30 12 * * *'  # Draait om 13:30 's middags CET
-    - cron: '0 18 * * *'   # Draait om 19:00 's avonds CET
-    - cron: '0 19 * * *'   # Draait om 20:00 's avonds CET
-    - cron: '20 21 * * *'  # Draait om 22:20 's avonds CET
-  workflow_dispatch:       # Zorgt ervoor dat je ook handmatig op 'Run workflow' kunt klikken
+    - cron: '0 11 * * *'   # 12:00 CET
+    - cron: '30 12 * * *'  # 13:30 CET
+    - cron: '0 18 * * *'   # 19:00 CET
+    - cron: '0 19 * * *'   # 20:00 CET
+    - cron: '20 21 * * *'  # 22:20 CET
+  workflow_dispatch:       # Handmatige knop
 
 permissions:
   contents: write
@@ -45,6 +44,10 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add activities.csv dashboard.html
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Automatische update van dashboard en data" && git push)
           
+          # Voeg de bestanden toe die aangepast kunnen zijn
+          git add activities.csv dashboard.html
+          
+          # Eenvoudigere commit-logica: commit alleen als er wijzigingen zijn, anders doe niets
+          git commit -m "Automatische update van dashboard en data voor Joël" || echo "Geen wijzigingen om te committen"
+          git push
