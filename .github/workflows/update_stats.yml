@@ -1,35 +1,27 @@
-name: Update Strava Data
+name: Update Strava Stats Joel
 
 on:
   schedule:
-    # Tijden zijn in UTC (1 uur vroeger dan Belgische wintertijd)
-    - cron: '0 11 * * *'   # Draait om 12:00 's middags CET
-    - cron: '30 12 * * *'  # Draait om 13:30 's middags CET
-    - cron: '0 18 * * *'   # Draait om 19:00 's avonds CET
-    - cron: '0 19 * * *'   # Draait om 20:00 's avonds CET
-    - cron: '20 21 * * *'  # Draait om 22:20 's avonds CET
-  workflow_dispatch:       # Zorgt ervoor dat je ook handmatig op 'Run workflow' kunt klikken
-
-permissions:
-  contents: write
+    - cron: '0 1 * * *' # Elke nacht om 01:00
+  workflow_dispatch: # Zodat je het ook handmatig kunt starten
 
 jobs:
-  update-dashboard:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.9'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests pandas plotly
+          pip install -r requirements.txt
 
       - name: Run Strava Update Script
         env:
@@ -41,10 +33,12 @@ jobs:
       - name: Run Dashboard Generator
         run: python maak_dashboard.py
 
-      - name: Commit and Push changes
+      - name: Commit and push changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          # Voeg zowel het logboek als het dashboard toe
           git add activities.csv dashboard.html
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Automatische update van dashboard en data" && git push)
-          
+          # Alleen opslaan als er echt iets veranderd is
+          git commit -m "Robot: Data en Dashboard bijgewerkt voor Joël" || exit 0
+          git push
