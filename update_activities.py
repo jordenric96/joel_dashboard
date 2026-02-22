@@ -114,6 +114,7 @@ def main():
                 'Activiteitstype': sport_type,
                 'Beweegtijd': a.get('moving_time', 0),
                 'Afstand': a.get('distance', 0) / 1000.0,
+                'Totale stijging': a.get('total_elevation_gain', 0), # Hiermee halen we de hoogtemeters op!
                 'Gemiddelde snelheid': a.get('average_speed', 0) * 3.6,
                 'Gemiddelde hartslag': a.get('average_heartrate', ''),
                 'Wattage': a.get('average_watts', ''),
