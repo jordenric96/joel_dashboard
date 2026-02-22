@@ -202,7 +202,6 @@ def create_monthly_charts(df_cur, df_prev, year):
     return f'<div class="chart-grid"><div class="chart-box">{fb.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div><div class="chart-box">{fw.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div></div>'
 
 def create_elevation_chart(df_yr):
-    # Het nieuwe "kotje" voor hoogtemeters
     if 'Hoogtemeters' not in df_yr.columns: return ""
     df_elev = df_yr[df_yr['Hoogtemeters'] > 0]
     if df_elev.empty: return ""
@@ -373,15 +372,14 @@ def generate_kpi(lbl, val, icon, diff_html, unit=""):
 
 # --- MAIN ---
 def genereer_dashboard():
-    print("🚀 Start V72.0 (MTB, Padel, Wandelen & Hoogtemeters)...")
+    print("🚀 Start V73.0 (Trek E-MTB materiaal toewijzing)...")
     try:
         df = pd.read_csv('activities.csv')
-        # Toegevoegd: Hoogteverschil of Elevatiewinst vertalen naar Hoogtemeters
         nm = {'Datum van activiteit':'Datum', 'Naam activiteit':'Naam', 'Activiteitstype':'Activiteitstype', 'Beweegtijd':'Beweegtijd_sec', 'Afstand':'Afstand_km', 'Gemiddelde hartslag':'Hartslag', 'Gemiddelde snelheid':'Gem_Snelheid', 'Uitrusting voor activiteit':'Gear', 'Calorieën':'Calorieën', 'Hoogteverschil':'Hoogtemeters', 'Elevatiewinst':'Hoogtemeters'}
         df = df.rename(columns={k:v for k,v in nm.items() if k in df.columns})
         
-        # Zorg dat Hoogtemeters altijd bestaat (voorkomt errors)
         if 'Hoogtemeters' not in df.columns: df['Hoogtemeters'] = 0
+        if 'Gear' not in df.columns: df['Gear'] = ''
         
         for c in ['Afstand_km', 'Beweegtijd_sec', 'Gem_Snelheid', 'Calorieën', 'Hoogtemeters']:
             if c in df.columns: df[c] = pd.to_numeric(df[c].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
@@ -391,6 +389,19 @@ def genereer_dashboard():
         df['Datum'] = df['Datum'].apply(solve_dates); df = df.dropna(subset=['Datum'])
         df['Categorie'] = df.apply(determine_category, axis=1); df['Jaar'] = df['Datum'].dt.year; df['Day'] = df['Datum'].dt.dayofyear
         if df['Gem_Snelheid'].mean() < 10: df['Gem_Snelheid'] *= 3.6
+        
+        # --- GEAR FIX: Trek E-MTB logica ---
+        df['Gear'] = df['Gear'].astype(str).replace(['nan', 'None'], '').str.strip()
+        
+        # 1. Alles wat naar "Merida" of "Merida scultura" verwijst, wordt vervangen
+        df.loc[df['Gear'].str.lower().str.contains('merida'), 'Gear'] = 'Trek E-MTB'
+        
+        # 2. Alle fietsactiviteiten (Mountainbike) vanaf september 2022 worden op "Trek E-MTB" gezet
+        mtb_vanaf_sep22 = (df['Categorie'] == 'Mountainbike') & (df['Datum'] >= pd.Timestamp('2022-09-01'))
+        df.loc[mtb_vanaf_sep22, 'Gear'] = 'Trek E-MTB'
+        
+        df['Gear'] = df['Gear'].replace('', np.nan)
+        # -----------------------------------
         
         years = sorted(df['Jaar'].unique(), reverse=True)
         nav, sects = "", ""
@@ -407,7 +418,6 @@ def genereer_dashboard():
             hm_yr = df_yr['Hoogtemeters'].sum() if 'Hoogtemeters' in df_yr.columns else 0
             hm_prev = df_prev_comp['Hoogtemeters'].sum() if 'Hoogtemeters' in df_prev_comp.columns and not df_prev_comp.empty else 0
             
-            # De nieuwe grid heeft 5 KPI's, de CSS grid is ingesteld op kolommen
             sects += f"""<div id="v-{yr}" class="tab-content" style="display:{"block" if yr == datetime.now().year else "none"}">
                 <div class="kpi-grid">
                     {generate_kpi("Sessies", len(df_yr), "👟", format_diff_html(len(df_yr), len(df_prev_comp)))}
@@ -432,7 +442,6 @@ def genereer_dashboard():
         nav += '<button class="nav-btn" onclick="openTab(event, \'v-Tot\')">Carrière</button>'
         sects += f'<div id="v-Tot" class="tab-content" style="display:none"><h2 class="sec-title" style="color:var(--text);">All-Time Garage</h2>{generate_yearly_gear(df, df, True)}<h3 class="sec-sub">All-Time Records</h3>{generate_hall_of_fame(df)}</div>'
         
-        # HTML template blijft hetzelfde, kpi-grid CSS krijgt nu auto-fit
         html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>⚡ Sportoverzicht</title>
@@ -511,7 +520,7 @@ def genereer_dashboard():
         </script></body></html>"""
         
         with open('dashboard.html', 'w', encoding='utf-8') as f: f.write(html)
-        print("✅ Dashboard (V72.0) klaar: Focus op MTB, Padel, Wandelen met Hoogtemeters-grafiek!")
+        print("✅ Dashboard (V73.0) klaar: Merida is verwijderd en alle MTB-ritten vanaf september 2022 zijn Trek E-MTB!")
     except Exception as e: print(f"❌ Fout: {e}")
 
 if __name__ == "__main__": genereer_dashboard()
