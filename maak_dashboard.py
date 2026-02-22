@@ -48,23 +48,19 @@ def solve_dates(date_str):
 def determine_category(row):
     t = str(row['Activiteitstype']).lower().strip(); n = str(row['Naam']).lower().strip()
     
-    # Kracht gaat voor, zodat 'Krachttraining' niet per ongeluk bij Padel belandt
     if any(x in t for x in ['kracht', 'power', 'gym', 'fitness', 'weight']) or any(x in n for x in ['kracht', 'power', 'gym', 'fitness']): return 'Krachttraining'
-    
     if 'virtu' in t or 'zwift' in n: return 'Zwift'
-    if any(x in t for x in ['fiets', 'ride', 'gravel', 'mtb', 'cycle', 'wieler', 'velomobiel', 'e-bike']): return 'Fiets'
+    # Alle buitenritten heten nu Mountainbike
+    if any(x in t for x in ['fiets', 'ride', 'gravel', 'mtb', 'cycle', 'wieler', 'velomobiel', 'e-bike']): return 'Mountainbike'
     if any(x in t for x in ['hardloop', 'run', 'jog', 'lopen', 'loop']): return 'Hardlopen'
     if 'zwem' in t: return 'Zwemmen'
     if any(x in t for x in ['wandel', 'hike', 'walk']): return 'Wandelen'
-    
-    # Padel en Training (zowel in type als in naam)
     if any(x in t for x in ['padel', 'tennis', 'squash', 'training', 'train']) or any(x in n for x in ['padel', 'training', 'train']): return 'Padel'
-    
     return 'Overig'
 
 def get_sport_style(cat):
     styles = {
-        'Fiets':('🚴', COLORS['bike_out']), 'Zwift':('👾', COLORS['zwift']), 
+        'Mountainbike':('🚴', COLORS['bike_out']), 'Zwift':('👾', COLORS['zwift']), 
         'Hardlopen':('🏃', COLORS['run']), 'Wandelen':('🚶', COLORS['walk']), 
         'Padel':('🎾', COLORS['padel']), 'Zwemmen':('🏊', COLORS['swim']),
         'Krachttraining': ('🏋️', COLORS['strength'])
@@ -186,12 +182,12 @@ def generate_streaks_box(df):
 def create_monthly_charts(df_cur, df_prev, year):
     months = ['Jan','Feb','Mrt','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
     def get_m(df, cats): return df[df['Categorie'].isin(cats)].groupby(df['Datum'].dt.month)['Afstand_km'].sum().reindex(range(1,13), fill_value=0)
-    pt = get_m(df_prev, ['Fiets', 'Zwift']); cz = get_m(df_cur, ['Zwift']); co = get_m(df_cur, ['Fiets'])
+    pt = get_m(df_prev, ['Mountainbike', 'Zwift']); cz = get_m(df_cur, ['Zwift']); co = get_m(df_cur, ['Mountainbike'])
     fb = go.Figure()
     fb.add_trace(go.Bar(x=months, y=pt, name=f"{year-1}", marker_color=COLORS['ref_gray'], offsetgroup=1))
     fb.add_trace(go.Bar(x=months, y=cz, name=f"{year} Zwift", marker_color=COLORS['zwift'], offsetgroup=2))
-    fb.add_trace(go.Bar(x=months, y=co, name=f"{year} Buiten", marker_color=COLORS['bike_out'], base=cz, offsetgroup=2))
-    fb.update_layout(title='🚴 Fietsen (km)', template='plotly_dark', barmode='group', margin=dict(t=50,b=60,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
+    fb.add_trace(go.Bar(x=months, y=co, name=f"{year} MTB", marker_color=COLORS['bike_out'], base=cz, offsetgroup=2))
+    fb.update_layout(title='🚴 Mountainbike & Zwift (km)', template='plotly_dark', barmode='group', margin=dict(t=50,b=60,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
     
     pr = get_m(df_prev, ['Hardlopen']); cr = get_m(df_cur, ['Hardlopen'])
     fr = go.Figure()
@@ -223,9 +219,9 @@ def create_strength_freq_chart(df_yr):
     return f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
 
 def create_scatter_plot(df_yr):
-    df_bike = df_yr[df_yr['Categorie'] == 'Fiets']; df_zwift = df_yr[df_yr['Categorie'] == 'Zwift']; df_run = df_yr[df_yr['Categorie'] == 'Hardlopen']
+    df_bike = df_yr[df_yr['Categorie'] == 'Mountainbike']; df_zwift = df_yr[df_yr['Categorie'] == 'Zwift']; df_run = df_yr[df_yr['Categorie'] == 'Hardlopen']
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_bike['Afstand_km'], y=df_bike['Gem_Snelheid'], mode='markers', name='Fiets', marker=dict(color=COLORS['bike_out'], size=8), text=df_bike['Naam']))
+    fig.add_trace(go.Scatter(x=df_bike['Afstand_km'], y=df_bike['Gem_Snelheid'], mode='markers', name='MTB', marker=dict(color=COLORS['bike_out'], size=8), text=df_bike['Naam']))
     fig.add_trace(go.Scatter(x=df_zwift['Afstand_km'], y=df_zwift['Gem_Snelheid'], mode='markers', name='Zwift', marker=dict(color=COLORS['zwift'], size=8), text=df_zwift['Naam']))
     fig.add_trace(go.Scatter(x=df_run['Afstand_km'], y=df_run['Gem_Snelheid'], mode='markers', name='Loop', marker=dict(color=COLORS['run'], size=8), text=df_run['Naam']))
     fig.update_layout(title='⚡ Snelheid vs Afstand', template='plotly_dark', margin=dict(t=50,b=60,l=0,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.3, x=0.5, xanchor="center"), xaxis=dict(gridcolor='rgba(255,255,255,0.05)'), yaxis=dict(gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
@@ -243,7 +239,7 @@ def create_zone_pie(df_yr):
 
 def generate_sport_cards(df_yr, df_prev_comp):
     html = '<div class="sport-grid">'
-    cp = df_yr['Categorie'].unique(); co = ['Fiets', 'Zwift', 'Hardlopen', 'Krachttraining', 'Padel', 'Wandelen', 'Zwemmen', 'Overig']
+    cp = df_yr['Categorie'].unique(); co = ['Mountainbike', 'Zwift', 'Hardlopen', 'Krachttraining', 'Padel', 'Wandelen', 'Zwemmen', 'Overig']
     cats = [c for c in co if c in cp] + [c for c in cp if c not in co]
     
     for cat in cats:
@@ -287,7 +283,7 @@ def generate_yearly_gear(df_yr, df_all, all_time_mode=False):
         ky = dy['Afstand_km'].sum()
         sy = dy['Beweegtijd_sec'].sum()
         
-        act_mode = dy['Categorie'].mode()[0] if not dy.empty else 'Fiets'
+        act_mode = dy['Categorie'].mode()[0] if not dy.empty else 'Mountainbike'
         icon = '👟' if act_mode in ['Hardlopen', 'Wandelen'] else '🚲'
         verb = 'Gelopen' if icon == '👟' else 'Gereden'
         
@@ -327,7 +323,7 @@ def generate_yearly_gear(df_yr, df_all, all_time_mode=False):
 def generate_hall_of_fame(df):
     html = '<div class="hof-grid">'
     df_h = df.dropna(subset=['Datum']).copy()
-    for cat in ['Fiets', 'Zwift', 'Hardlopen']:
+    for cat in ['Mountainbike', 'Zwift', 'Hardlopen']:
         df_s = df_h[df_h['Categorie'] == cat]
         if df_s.empty: continue
         icon, color = get_sport_style(cat)
@@ -366,7 +362,7 @@ def generate_kpi(lbl, val, icon, diff_html, unit=""):
 
 # --- MAIN ---
 def genereer_dashboard():
-    print("🚀 Start V71.0 (Joël Edition)...")
+    print("🚀 Start V71.0 (Joël Edition - Mountainbike)...")
     try:
         df = pd.read_csv('activities.csv')
         nm = {'Datum van activiteit':'Datum', 'Naam activiteit':'Naam', 'Activiteitstype':'Activiteitstype', 'Beweegtijd':'Beweegtijd_sec', 'Afstand':'Afstand_km', 'Gemiddelde hartslag':'Hartslag', 'Gemiddelde snelheid':'Gem_Snelheid', 'Uitrusting voor activiteit':'Gear', 'Calorieën':'Calorieën'}
@@ -380,15 +376,12 @@ def genereer_dashboard():
         df['Datum'] = df['Datum'].apply(solve_dates); df = df.dropna(subset=['Datum'])
         
         # --- JOËL GEAR FIX ---
-        # Forceer Gear kolom naar tekst om crashen te voorkomen
         if 'Gear' not in df.columns: df['Gear'] = ''
         df['Gear'] = df['Gear'].astype(str)
         
-        # Detecteer mountainbike (in type of naam) en check of het na 1 sept 2022 was
-        is_mtb = df['Activiteitstype'].astype(str).str.lower().str.contains('mountainbike|mtb') | df['Naam'].astype(str).str.lower().str.contains('mtb|mountainbike')
+        is_mtb = df['Activiteitstype'].astype(str).str.lower().str.contains('mountainbike|mtb|fiets|ride|cycle') | df['Naam'].astype(str).str.lower().str.contains('mtb|mountainbike')
         vanaf_sept_2022 = df['Datum'] >= pd.Timestamp('2022-09-01')
         
-        # Wis alle overige uitrusting (geen schoenen etc) en zet alleen de MTB erin
         df['Gear'] = ''
         df.loc[is_mtb & vanaf_sept_2022, 'Gear'] = 'E-MTB Trek'
         
