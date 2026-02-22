@@ -185,7 +185,6 @@ def generate_streaks_box(df):
 
 def create_monthly_charts(df_cur, df_prev, year):
     months = ['Jan','Feb','Mrt','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
-    # Altijd voor 1 tot 12 maanden de sessies optellen
     def get_c(df, cat): return df[df['Categorie'] == cat].groupby(df['Datum'].dt.month).size().reindex(range(1,13), fill_value=0)
     
     html = '<div class="chart-grid">'
@@ -197,7 +196,9 @@ def create_monthly_charts(df_cur, df_prev, year):
         fig = go.Figure()
         fig.add_trace(go.Bar(x=months, y=p, name=f"{year-1}", marker_color=COLORS['ref_gray']))
         fig.add_trace(go.Bar(x=months, y=c, name=f"{year}", marker_color=color))
-        fig.update_layout(title=title, template='plotly_dark', barmode='group', margin=dict(t=50,b=60,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
+        
+        # AANGEPAST: xaxis=dict(type='category', categoryarray=months) forceert de weergave van alle maanden
+        fig.update_layout(title=title, template='plotly_dark', barmode='group', margin=dict(t=50,b=60,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), xaxis=dict(fixedrange=True, type='category', categoryorder='array', categoryarray=months), yaxis=dict(fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
         html += f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
         
     return html + '</div>'
@@ -211,7 +212,6 @@ def create_heatmap(df_yr):
     if pivot.empty: return ""
     fig = go.Figure(data=go.Heatmap(z=pivot.values, x=[nl_days[d] for d in pivot.columns], y=pivot.index, colorscale=[[0, 'rgba(255,255,255,0.03)'], [1, COLORS['mountainbike']]], showscale=False))
     fig.update_layout(title='📅 Hittekaart (Wanneer sport je?)', template='plotly_dark', margin=dict(t=50,b=40,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(title='', range=[6, 23], fixedrange=True), xaxis=dict(fixedrange=True), font=dict(color='#94a3b8'))
-    # Veranderd naar full-width box zodat hij over de gehele breedte staat
     return f'<div class="chart-box full-width">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
 
 def generate_sport_cards(df_yr, df_prev_comp):
@@ -243,7 +243,6 @@ def generate_sport_cards(df_yr, df_prev_comp):
         if elev > 0: rows += f'<div class="stat-row"><span>Hoogtemeters</span><div class="val-group"><strong>⛰️ {elev:,.0f} m</strong>{format_diff_html(elev, elev_p)}</div></div>'                
         if pd.notna(wt) and wt>0: rows += f'<div class="stat-row"><span>Wattage</span><strong>⚡ {wt:.0f} W</strong></div>'
         
-        # Aangepast: Hartslag niet meer verborgen met slotje, gewoon altijd tonen
         if pd.notna(hr) and hr>0: rows += f'<div class="stat-row"><span>Hartslag</span><strong>❤️ {hr:.0f} bpm</strong></div>'
         if cal > 0: rows += f'<div class="stat-row"><span>Energie</span><strong>🔥 {cal:,.0f} kcal</strong></div>'
             
@@ -305,7 +304,6 @@ def generate_hall_of_fame(df):
     html = '<div class="hof-grid">'
     df_h = df.dropna(subset=['Datum']).copy()
     
-    # Aangepast: Padel is verwijderd, we tonen enkel MTB en Wandelen
     for cat in ['Mountainbike', 'Wandelen']:
         df_s = df_h[df_h['Categorie'] == cat]
         if df_s.empty: continue
@@ -335,7 +333,6 @@ def generate_hall_of_fame(df):
         secs = f'<div class="hof-sec"><div class="sec-lbl">Langste Afstand</div>{t3("Afstand_km","km")}</div>'
         secs += f'<div class="hof-sec" style="margin-top:10px;"><div class="sec-lbl">Langste Duurtijd</div>{t3("Beweegtijd_sec")}</div>'
         
-        # Aangepast: Enkel gemiddelde snelheid tonen voor MTB
         if cat == 'Mountainbike':
             secs += f'<div class="hof-sec" style="margin-top:10px;"><div class="sec-lbl">Snelste Gem.</div>{t3("Gem_Snelheid","km/u")}</div>'
             
@@ -346,7 +343,6 @@ def generate_logbook(df):
     rows = ""
     for _, r in df.sort_values('Datum', ascending=False).iterrows():
         km = f"{r['Afstand_km']:.1f}" if r['Afstand_km'] > 0 else "-"
-        # Aangepast: Hartslag is toegevoegd
         hr = f"{r['Hartslag']:.0f}" if pd.notna(r['Hartslag']) and r['Hartslag'] > 0 else "-"
         
         rows += f"<tr><td>{r['Datum'].strftime('%d-%m')}</td><td>{get_sport_style(r['Categorie'])[0]}</td><td>{r['Naam']}</td><td align='center'>{hr}</td><td align='right'><strong>{km}</strong></td></tr>"
@@ -361,7 +357,7 @@ def generate_kpi(lbl, val, icon, diff_html, unit=""):
 
 # --- MAIN ---
 def genereer_dashboard():
-    print("🚀 Start V76.0 (Open Hartslag, Padel Records weg, Hittekaart full width)...")
+    print("🚀 Start V77.0 (Force 12 months X-axis & remove proracer)...")
     try:
         df = pd.read_csv('activities.csv')
         nm = {'Datum van activiteit':'Datum', 'Naam activiteit':'Naam', 'Activiteitstype':'Activiteitstype', 'Beweegtijd':'Beweegtijd_sec', 'Afstand':'Afstand_km', 'Gemiddelde hartslag':'Hartslag', 'Gemiddelde snelheid':'Gem_Snelheid', 'Uitrusting voor activiteit':'Gear', 'Calorieën':'Calorieën', 'Hoogteverschil':'Hoogtemeters', 'Elevatiewinst':'Hoogtemeters'}
@@ -379,9 +375,15 @@ def genereer_dashboard():
         df['Categorie'] = df.apply(determine_category, axis=1); df['Jaar'] = df['Datum'].dt.year; df['Day'] = df['Datum'].dt.dayofyear
         if df['Gem_Snelheid'].mean() < 10: df['Gem_Snelheid'] *= 3.6
         
-        # --- GEAR FIX: Trek E-MTB logica ---
+        # --- GEAR FIX: Trek E-MTB & Proracer logica ---
         df['Gear'] = df['Gear'].astype(str).replace(['nan', 'None'], '').str.strip()
-        df.loc[df['Gear'].str.lower().str.contains('merida'), 'Gear'] = 'Trek E-MTB'
+        
+        # Wijzig merida naar Trek E-MTB
+        df.loc[df['Gear'].str.lower().str.contains('merida', na=False), 'Gear'] = 'Trek E-MTB'
+        
+        # AANGEPAST: proracer volledig wissen zodat het niet meer in de materiaal tabellen komt
+        df.loc[df['Gear'].str.lower().str.contains('proracer', na=False), 'Gear'] = ''
+        
         mtb_vanaf_sep22 = (df['Categorie'] == 'Mountainbike') & (df['Datum'] >= pd.Timestamp('2022-09-01'))
         df.loc[mtb_vanaf_sep22, 'Gear'] = 'Trek E-MTB'
         df['Gear'] = df['Gear'].replace('', np.nan)
@@ -425,7 +427,6 @@ def genereer_dashboard():
         nav += '<button class="nav-btn" onclick="openTab(event, \'v-Tot\')">Carrière</button>'
         sects += f'<div id="v-Tot" class="tab-content" style="display:none"><h2 class="sec-title" style="color:var(--text);">All-Time Garage</h2>{generate_yearly_gear(df, df, True)}<h3 class="sec-sub">All-Time Records</h3>{generate_hall_of_fame(df)}</div>'
         
-        # Aangepast: Lock button is weggehaald uit de header
         html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>⚡ Sportoverzicht</title>
@@ -495,7 +496,7 @@ def genereer_dashboard():
         </script></body></html>"""
         
         with open('dashboard.html', 'w', encoding='utf-8') as f: f.write(html)
-        print("✅ Dashboard (V76.0) klaar: Hartslag open + logboek, geen padel records en hittekaart over de hele breedte!")
+        print("✅ Dashboard klaar: Proracer gewist en X-as voor MTB is nu altijd 12 maanden!")
     except Exception as e: print(f"❌ Fout: {e}")
 
 if __name__ == "__main__": genereer_dashboard()
