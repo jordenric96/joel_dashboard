@@ -259,28 +259,45 @@ def genereer_manifest():
     with open('manifest.json', 'w') as f: json.dump(manifest, f)
 
 def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html'):
-    print("🚀 Start Generatie V10 (Focus MTB & Wandelen)...")
+    print("🚀 Start Generatie V11 (Robuuste kolommen + MTB/Wandelen)...")
     try:
         df = pd.read_csv(csv_input)
     except:
         print("❌ CSV niet gevonden.")
         return
 
-    df = df.rename(columns={
-        'Datum van activiteit': 'Datum', 'Naam activiteit': 'Naam', 
-        'Activiteitstype': 'Activiteitstype', 'Beweegtijd': 'Beweegtijd_sec',
-        'Afstand': 'Afstand_km', 'Totale stijging': 'Hoogte_m',
-        'Gemiddelde hartslag': 'Gemiddelde_Hartslag',
-        'Gemiddelde snelheid': 'Gemiddelde_Snelheid_km_u',
-        'Max. snelheid': 'Max_Snelheid_km_u',
-        'Uitrusting voor activiteit': 'Uitrusting voor activiteit'
-    })
+    # Slim zoeken naar verschillende mogelijke namen voor de kolommen
+    rename_mapping = {
+        'Datum van activiteit': 'Datum', 'Activity Date': 'Datum',
+        'Naam activiteit': 'Naam', 'Activity Name': 'Naam',
+        'Activiteitstype': 'Activiteitstype', 'Activity Type': 'Activiteitstype',
+        'Beweegtijd': 'Beweegtijd_sec', 'Moving Time': 'Beweegtijd_sec',
+        'Afstand': 'Afstand_km', 'Distance': 'Afstand_km',
+        'Totale stijging': 'Hoogte_m', 'Hoogtewinst': 'Hoogte_m', 'Hoogteverschil': 'Hoogte_m', 'Elevation Gain': 'Hoogte_m',
+        'Gemiddelde hartslag': 'Gemiddelde_Hartslag', 'Average Heart Rate': 'Gemiddelde_Hartslag',
+        'Gemiddelde snelheid': 'Gemiddelde_Snelheid_km_u', 'Average Speed': 'Gemiddelde_Snelheid_km_u',
+        'Max. snelheid': 'Max_Snelheid_km_u', 'Max Speed': 'Max_Snelheid_km_u',
+        'Uitrusting voor activiteit': 'Uitrusting voor activiteit', 'Activity Gear': 'Uitrusting voor activiteit'
+    }
     
+    # Hernoem de kolommen die we kunnen vinden
+    df = df.rename(columns=lambda x: rename_mapping.get(x.strip(), x))
+
+    # --- VEILIGHEIDSCHECK ONTBREKENDE DATA ---
+    vereiste_kolommen = ['Hoogte_m', 'Gemiddelde_Hartslag', 'Gemiddelde_Snelheid_km_u', 'Beweegtijd_sec', 'Afstand_km']
+    for col in vereiste_kolommen:
+        if col not in df.columns:
+            df[col] = 0.0
+
     cols = ['Afstand_km', 'Hoogte_m', 'Gemiddelde_Snelheid_km_u', 'Gemiddelde_Hartslag', 'Max_Snelheid_km_u']
     for c in cols:
         if c in df.columns and df[c].dtype == object:
             df[c] = pd.to_numeric(df[c].astype(str).str.replace(',', '.'), errors='coerce')
             
+    for col in vereiste_kolommen:
+        df[col] = df[col].fillna(0)
+    # -----------------------------------------
+
     if df['Gemiddelde_Snelheid_km_u'].mean() < 8: 
         df['Gemiddelde_Snelheid_km_u'] *= 3.6
         if 'Max_Snelheid_km_u' in df.columns: df['Max_Snelheid_km_u'] *= 3.6
@@ -292,19 +309,30 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
     df = df[~mask_exclude]
 
     # 2. Alles met 'rit', 'ochtendrit', 'fiets' wordt Mountainbike, en krijgt 'Emtb trek' als uitrusting
-    mask_mtb = df['Naam'].str.contains('rit|ochtend|fiets|mountainbike|mtb', case=False, na=False) | \
-               df['Activiteitstype'].str.contains('fiets|ride|mountainbike|mtb', case=False, na=False)
+    if 'Naam' in df.columns:
+        mask_mtb = df['Naam'].str.contains('rit|ochtend|fiets|mountainbike|mtb', case=False, na=False) | \
+                   df['Activiteitstype'].str.contains('fiets|ride|mountainbike|mtb', case=False, na=False)
+    else:
+        mask_mtb = df['Activiteitstype'].str.contains('fiets|ride|mountainbike|mtb', case=False, na=False)
+
     df.loc[mask_mtb, 'Activiteitstype'] = 'Mountainbike'
+    
+    if 'Uitrusting voor activiteit' not in df.columns:
+        df['Uitrusting voor activiteit'] = ''
     df.loc[mask_mtb, 'Uitrusting voor activiteit'] = 'Emtb trek'
 
     # 3. Wandel/Hike samenvoegen tot 'Wandelen'
     mask_wandel = df['Activiteitstype'].str.contains('wandel|hike|walk', case=False, na=False)
     df.loc[mask_wandel, 'Activiteitstype'] = 'Wandelen'
 
-    # 4. Verwijder alle andere overgebleven sporten (zoals Padel, Zwemmen)
+    # 4. Verwijder alle andere overgebleven sporten
     df = df[df['Activiteitstype'].isin(['Mountainbike', 'Wandelen'])]
     
     # -------------------------------------
+
+    if 'Datum' not in df.columns:
+        print("❌ Geen Datum kolom gevonden, kan niet verder.")
+        return
 
     df['Datum'] = robust_date_parser(df['Datum'])
     df['Jaar'] = df['Datum'].dt.year
@@ -313,13 +341,19 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
     now = datetime.now()
     huidig_jaar = now.year
     max_datum = df['Datum'].max()
+    
+    # Veiligheid voor lege data na filteren
+    if pd.isna(max_datum):
+        print("❌ Geen geldige data over na het filteren van de ritten.")
+        return
+        
     ytd_day = max_datum.dayofyear if max_datum.year == huidig_jaar else 366
 
     genereer_manifest()
 
     nav_html = ""
     sections_html = ""
-    jaren = sorted(df['Jaar'].unique(), reverse=True)
+    jaren = sorted(df['Jaar'].dropna().unique(), reverse=True)
     
     for jaar in jaren:
         is_cur = (jaar == max_datum.year)
@@ -346,17 +380,17 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
         df_cum_p = df_prev_all.sort_values('DagVanJaar')[['DagVanJaar', 'Afstand_km']].copy()
         df_cum_p['Cum'] = df_cum_p['Afstand_km'].cumsum()
         
-        fig = px.line(title=f"Koersverloop {jaar}")
-        fig.add_scatter(x=df_cum['DagVanJaar'], y=df_cum['Cum'], name=f"{jaar}", line_color=COLORS['chart_main'], line_width=3)
+        fig = px.line(title=f"Koersverloop {int(jaar)}")
+        fig.add_scatter(x=df_cum['DagVanJaar'], y=df_cum['Cum'], name=f"{int(jaar)}", line_color=COLORS['chart_main'], line_width=3)
         if not df_cum_p.empty:
-            fig.add_scatter(x=df_cum_p['DagVanJaar'], y=df_cum_p['Cum'], name=f"{prev}", line_color=COLORS['chart_sec'], line_dash='dot')
+            fig.add_scatter(x=df_cum_p['DagVanJaar'], y=df_cum_p['Cum'], name=f"{int(prev)}", line_color=COLORS['chart_sec'], line_dash='dot')
         fig.update_layout(template='plotly_white', margin=dict(t=40,l=20,r=20,b=20), height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=1.1, x=0))
 
-        nav_html += f'<button class="nav-btn {"active" if is_cur else ""}" onclick="openTab(event, \'view-{jaar}\')">{jaar}</button>'
+        nav_html += f'<button class="nav-btn {"active" if is_cur else ""}" onclick="openTab(event, \'view-{int(jaar)}\')">{int(jaar)}</button>'
         
         sections_html += f"""
-        <div id="view-{jaar}" class="tab-content" style="display: {'block' if is_cur else 'none'};">
-            <h2 class="section-title">Overzicht {jaar}</h2>
+        <div id="view-{int(jaar)}" class="tab-content" style="display: {'block' if is_cur else 'none'};">
+            <h2 class="section-title">Overzicht {int(jaar)}</h2>
             {kpis}
             <h3 class="section-subtitle">Per Sport</h3>
             {generate_sport_cards(df_j, df_prev_ytd)}
@@ -393,7 +427,7 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
     rows = ""
     for _, row in df.sort_values('Datum', ascending=False).iterrows():
         st = get_sport_style(row['Activiteitstype'])
-        hr = f"{row['Gemiddelde_Hartslag']:.0f}" if pd.notna(row['Gemiddelde_Hartslag']) else "-"
+        hr = f"{row['Gemiddelde_Hartslag']:.0f}" if pd.notna(row['Gemiddelde_Hartslag']) and row['Gemiddelde_Hartslag'] > 0 else "-"
         rows += f"""<tr data-sport="{row['Activiteitstype']}"><td><div style="width:8px;height:8px;border-radius:50%;background:{st['color']}"></div></td>
         <td>{row['Datum'].strftime('%d-%m-%y')}</td><td>{row['Activiteitstype']}</td><td>{row['Naam']}</td>
         <td class="num">{row['Afstand_km']:.1f}</td><td class="num hr-blur">{hr}</td></tr>"""
@@ -514,7 +548,7 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
     
     with open(html_output, 'w', encoding='utf-8') as f:
         f.write(html)
-    print("✅ Luxe Dashboard gereed met uitsluitend Mountainbike & Wandelen!")
+    print("✅ Dashboard succesvol gegenereerd inclusief error-afhandeling!")
 
 if __name__ == "__main__":
     genereer_dashboard()
