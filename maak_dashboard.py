@@ -49,18 +49,12 @@ def determine_category(row):
     t = str(row['Activiteitstype']).lower().strip()
     n = str(row['Naam']).lower().strip()
     
-    # Alles met training is Padel
     if 'train' in t or 'train' in n or any(x in t for x in ['padel', 'tennis', 'squash', 'work', 'fit']): 
         return 'Padel'
-    
-    # Alles met fiets, rit, mtb, mountainbike is Mountainbike
     if any(x in t for x in ['fiets', 'rit', 'mtb', 'mountainbike', 'ride', 'cycle', 'gravel', 'velomobiel', 'e-bike']) or any(x in n for x in ['fiets', 'rit', 'mtb', 'mountainbike']): 
         return 'Mountainbike'
-    
-    # Wandelen blijft Wandelen
     if any(x in t for x in ['wandel', 'hike', 'walk']): 
         return 'Wandelen'
-    
     return 'Overig'
 
 def get_sport_style(cat):
@@ -197,8 +191,14 @@ def create_monthly_charts(df_cur, df_prev, year):
         fig.add_trace(go.Bar(x=months, y=p, name=f"{year-1}", marker_color=COLORS['ref_gray']))
         fig.add_trace(go.Bar(x=months, y=c, name=f"{year}", marker_color=color))
         
-        # AANGEPAST: xaxis=dict(type='category', categoryarray=months) forceert de weergave van alle maanden
-        fig.update_layout(title=title, template='plotly_dark', barmode='group', margin=dict(t=50,b=60,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), xaxis=dict(fixedrange=True, type='category', categoryorder='array', categoryarray=months), yaxis=dict(fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
+        # DEFINITIEVE FIX: range=[-0.5, 11.5] forceert Plotly om van de allereerste tot de allerlaatste maand te tonen
+        fig.update_layout(
+            title=title, template='plotly_dark', barmode='group', margin=dict(t=50,b=60,l=10,r=10), height=300, 
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+            legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), 
+            xaxis=dict(fixedrange=True, tickmode='array', tickvals=months, range=[-0.5, 11.5]), 
+            yaxis=dict(fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8')
+        )
         html += f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
         
     return html + '</div>'
@@ -357,7 +357,7 @@ def generate_kpi(lbl, val, icon, diff_html, unit=""):
 
 # --- MAIN ---
 def genereer_dashboard():
-    print("🚀 Start V77.0 (Force 12 months X-axis & remove proracer)...")
+    print("🚀 Start V78.0 (Harde X-as fix & proracer weg)...")
     try:
         df = pd.read_csv('activities.csv')
         nm = {'Datum van activiteit':'Datum', 'Naam activiteit':'Naam', 'Activiteitstype':'Activiteitstype', 'Beweegtijd':'Beweegtijd_sec', 'Afstand':'Afstand_km', 'Gemiddelde hartslag':'Hartslag', 'Gemiddelde snelheid':'Gem_Snelheid', 'Uitrusting voor activiteit':'Gear', 'Calorieën':'Calorieën', 'Hoogteverschil':'Hoogtemeters', 'Elevatiewinst':'Hoogtemeters'}
@@ -381,7 +381,7 @@ def genereer_dashboard():
         # Wijzig merida naar Trek E-MTB
         df.loc[df['Gear'].str.lower().str.contains('merida', na=False), 'Gear'] = 'Trek E-MTB'
         
-        # AANGEPAST: proracer volledig wissen zodat het niet meer in de materiaal tabellen komt
+        # Proracer wissen zodat het niet meer in de materiaal tabellen komt
         df.loc[df['Gear'].str.lower().str.contains('proracer', na=False), 'Gear'] = ''
         
         mtb_vanaf_sep22 = (df['Categorie'] == 'Mountainbike') & (df['Datum'] >= pd.Timestamp('2022-09-01'))
@@ -496,7 +496,7 @@ def genereer_dashboard():
         </script></body></html>"""
         
         with open('dashboard.html', 'w', encoding='utf-8') as f: f.write(html)
-        print("✅ Dashboard klaar: Proracer gewist en X-as voor MTB is nu altijd 12 maanden!")
+        print("✅ Dashboard (V78.0) klaar: X-as is keihard geforceerd naar 12 maanden!")
     except Exception as e: print(f"❌ Fout: {e}")
 
 if __name__ == "__main__": genereer_dashboard()
