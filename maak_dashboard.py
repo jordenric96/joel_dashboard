@@ -28,7 +28,7 @@ COLORS = {
     
     'default': '#94a3b8', 'ref_gray': '#334155',
     'z1': '#a3e635', 'z2': '#facc15', 'z3': '#fb923c', 'z4': '#f87171', 'z5': '#ef4444',
-    'elevation': '#fb923c' # Kleur voor hoogtemeters
+    'elevation': '#fb923c'
 }
 
 YEAR_COLORS = ['#00e5ff', '#10b981', '#a855f7', '#facc15', '#ff007f']
@@ -185,35 +185,22 @@ def generate_streaks_box(df):
 
 def create_monthly_charts(df_cur, df_prev, year):
     months = ['Jan','Feb','Mrt','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
-    def get_m(df, cats): return df[df['Categorie'].isin(cats)].groupby(df['Datum'].dt.month)['Afstand_km'].sum().reindex(range(1,13), fill_value=0)
+    def get_c(df, cat): return df[df['Categorie'] == cat].groupby(df['Datum'].dt.month).size().reindex(range(1,13), fill_value=0)
     
-    pt = get_m(df_prev, ['Mountainbike']); ct = get_m(df_cur, ['Mountainbike'])
-    fb = go.Figure()
-    fb.add_trace(go.Bar(x=months, y=pt, name=f"{year-1}", marker_color=COLORS['ref_gray']))
-    fb.add_trace(go.Bar(x=months, y=ct, name=f"{year} MTB", marker_color=COLORS['mountainbike']))
-    fb.update_layout(title='🚴 Mountainbike (km)', template='plotly_dark', barmode='group', margin=dict(t=50,b=60,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
+    html = '<div class="chart-grid">'
     
-    pp = get_m(df_prev, ['Wandelen']); cp = get_m(df_cur, ['Wandelen'])
-    fw = go.Figure()
-    fw.add_trace(go.Bar(x=months, y=pp, name=f"{year-1}", marker_color=COLORS['ref_gray']))
-    fw.add_trace(go.Bar(x=months, y=cp, name=f"{year} Wandelen", marker_color=COLORS['walk']))
-    fw.update_layout(title='🚶 Wandelen (km)', template='plotly_dark', barmode='group', margin=dict(t=50,b=60,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
-    
-    return f'<div class="chart-grid"><div class="chart-box">{fb.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div><div class="chart-box">{fw.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div></div>'
-
-def create_elevation_chart(df_yr):
-    if 'Hoogtemeters' not in df_yr.columns: return ""
-    df_elev = df_yr[df_yr['Hoogtemeters'] > 0]
-    if df_elev.empty: return ""
-    
-    counts = df_elev.groupby(df_elev['Datum'].dt.month)['Hoogtemeters'].sum().reindex(range(1,13), fill_value=0)
-    months = ['Jan','Feb','Mrt','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
-    
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=months, y=counts, marker_color=COLORS['elevation'], text=counts.apply(lambda x: f"{x:.0f}m" if x > 0 else ""), textposition='auto'))
-    fig.update_layout(title='⛰️ Hoogtemeters per maand', template='plotly_dark', margin=dict(t=50,b=40,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(title='', fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), xaxis=dict(fixedrange=True), font=dict(color='#94a3b8'))
-    
-    return f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
+    # 3 grafieken: MTB, Wandelen en Padel (alle 3 gefocust op Aantal Sessies)
+    for cat, color, title in [('Mountainbike', COLORS['mountainbike'], '🚴 MTB (Sessies)'), 
+                              ('Wandelen', COLORS['walk'], '🚶 Wandelen (Sessies)'),
+                              ('Padel', COLORS['padel'], '🎾 Padel (Sessies)')]:
+        p = get_c(df_prev, cat); c = get_c(df_cur, cat)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=months, y=p, name=f"{year-1}", marker_color=COLORS['ref_gray']))
+        fig.add_trace(go.Bar(x=months, y=c, name=f"{year}", marker_color=color))
+        fig.update_layout(title=title, template='plotly_dark', barmode='group', margin=dict(t=50,b=60,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
+        html += f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
+        
+    return html + '</div>'
 
 def create_heatmap(df_yr):
     df_hm = df_yr.copy(); df_hm['Uur'] = df_hm['Datum'].dt.hour; df_hm['Weekdag'] = df_hm['Datum'].dt.day_name()
@@ -224,14 +211,6 @@ def create_heatmap(df_yr):
     if pivot.empty: return ""
     fig = go.Figure(data=go.Heatmap(z=pivot.values, x=[nl_days[d] for d in pivot.columns], y=pivot.index, colorscale=[[0, 'rgba(255,255,255,0.03)'], [1, COLORS['mountainbike']]], showscale=False))
     fig.update_layout(title='📅 Hittekaart (Wanneer sport je?)', template='plotly_dark', margin=dict(t=50,b=40,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(title='', range=[6, 23], fixedrange=True), xaxis=dict(fixedrange=True), font=dict(color='#94a3b8'))
-    return f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
-
-def create_scatter_plot(df_yr):
-    df_bike = df_yr[df_yr['Categorie'] == 'Mountainbike']; df_walk = df_yr[df_yr['Categorie'] == 'Wandelen']
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_bike['Afstand_km'], y=df_bike['Gem_Snelheid'], mode='markers', name='MTB', marker=dict(color=COLORS['mountainbike'], size=8), text=df_bike['Naam']))
-    fig.add_trace(go.Scatter(x=df_walk['Afstand_km'], y=df_walk['Gem_Snelheid'], mode='markers', name='Wandelen', marker=dict(color=COLORS['walk'], size=8), text=df_walk['Naam']))
-    fig.update_layout(title='⚡ Snelheid vs Afstand', template='plotly_dark', margin=dict(t=50,b=60,l=0,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.3, x=0.5, xanchor="center"), xaxis=dict(gridcolor='rgba(255,255,255,0.05)'), yaxis=dict(gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
     return f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
 
 def create_zone_pie(df_yr):
@@ -332,15 +311,27 @@ def generate_yearly_gear(df_yr, df_all, all_time_mode=False):
 def generate_hall_of_fame(df):
     html = '<div class="hof-grid">'
     df_h = df.dropna(subset=['Datum']).copy()
-    for cat in ['Mountainbike', 'Wandelen']:
+    # Padel is nu toegevoegd aan de Hall of Fame
+    for cat in ['Mountainbike', 'Wandelen', 'Padel']:
         df_s = df_h[df_h['Categorie'] == cat]
         if df_s.empty: continue
         icon, color = get_sport_style(cat)
-        def t3(col,u):
+        
+        def t3(col,u=""):
             if col not in df_s.columns: return ""
-            ds = df_s.sort_values(col, ascending=False).head(3); r=""
+            # Enkel records groter dan 0 tellen
+            ds = df_s[df_s[col] > 0].sort_values(col, ascending=False).head(3)
+            if ds.empty: return ""
+            
+            r=""
             for i,(_,row) in enumerate(ds.iterrows()):
-                v=row[col]; val=f"{v:.1f} {u}" if u != 'm' else f"{v:.0f} {u}"
+                v=row[col]
+                # Format duurtijd mooi als "1u 30m"
+                if col == 'Beweegtijd_sec':
+                    h, rem = divmod(v, 3600); m, _ = divmod(rem, 60)
+                    val = f"{int(h)}u {int(m):02d}m" if h > 0 else f"{int(m)}m"
+                else:
+                    val=f"{v:.1f} {u}" if u != 'm' else f"{v:.0f} {u}"
                 
                 r += f"""
                 <div class="top3-item" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:6px;">
@@ -348,11 +339,18 @@ def generate_hall_of_fame(df):
                     <span class="date" style="font-size:11px; color:var(--text_light); background:rgba(255,255,255,0.05); padding:2px 8px; border-radius:12px;">{row["Datum"].strftime("%d-%m-%y")}</span>
                 </div>"""
             return r
-        secs = f'<div class="hof-sec"><div class="sec-lbl">Langste Afstand</div>{t3("Afstand_km","km")}</div>'
-        if 'Hoogtemeters' in df_s.columns and df_s['Hoogtemeters'].max() > 0: 
-            secs += f'<div class="hof-sec" style="margin-top:10px;"><div class="sec-lbl">Meeste Hoogtemeters</div>{t3("Hoogtemeters","m")}</div>'
-        else: 
+            
+        secs = ""
+        # Geen afstand en snelheid voor Padel
+        if cat != 'Padel':
+            secs += f'<div class="hof-sec"><div class="sec-lbl">Langste Afstand</div>{t3("Afstand_km","km")}</div>'
+            
+        # Duurtijd toegevoegd voor alle sporten in de plaats van hoogtemeters
+        secs += f'<div class="hof-sec" style="margin-top:10px;"><div class="sec-lbl">Langste Duurtijd</div>{t3("Beweegtijd_sec")}</div>'
+        
+        if cat != 'Padel':
             secs += f'<div class="hof-sec" style="margin-top:10px;"><div class="sec-lbl">Snelste Gem.</div>{t3("Gem_Snelheid","km/u")}</div>'
+            
         html += f"""<div class="hof-card"><div class="hof-header" style="color:{color}; font-size:18px; font-weight:700; display:flex; gap:8px; align-items:center; margin-bottom:15px;">{icon} {cat}</div>{secs}</div>"""
     return html + '</div>'
 
@@ -372,7 +370,7 @@ def generate_kpi(lbl, val, icon, diff_html, unit=""):
 
 # --- MAIN ---
 def genereer_dashboard():
-    print("🚀 Start V73.0 (Trek E-MTB materiaal toewijzing)...")
+    print("🚀 Start V75.0 (3 Maandgrafieken, Duurtijd in Hall of Fame, Geen Scatter/Hoogte)...")
     try:
         df = pd.read_csv('activities.csv')
         nm = {'Datum van activiteit':'Datum', 'Naam activiteit':'Naam', 'Activiteitstype':'Activiteitstype', 'Beweegtijd':'Beweegtijd_sec', 'Afstand':'Afstand_km', 'Gemiddelde hartslag':'Hartslag', 'Gemiddelde snelheid':'Gem_Snelheid', 'Uitrusting voor activiteit':'Gear', 'Calorieën':'Calorieën', 'Hoogteverschil':'Hoogtemeters', 'Elevatiewinst':'Hoogtemeters'}
@@ -392,14 +390,9 @@ def genereer_dashboard():
         
         # --- GEAR FIX: Trek E-MTB logica ---
         df['Gear'] = df['Gear'].astype(str).replace(['nan', 'None'], '').str.strip()
-        
-        # 1. Alles wat naar "Merida" of "Merida scultura" verwijst, wordt vervangen
         df.loc[df['Gear'].str.lower().str.contains('merida'), 'Gear'] = 'Trek E-MTB'
-        
-        # 2. Alle fietsactiviteiten (Mountainbike) vanaf september 2022 worden op "Trek E-MTB" gezet
         mtb_vanaf_sep22 = (df['Categorie'] == 'Mountainbike') & (df['Datum'] >= pd.Timestamp('2022-09-01'))
         df.loc[mtb_vanaf_sep22, 'Gear'] = 'Trek E-MTB'
-        
         df['Gear'] = df['Gear'].replace('', np.nan)
         # -----------------------------------
         
@@ -432,8 +425,7 @@ def genereer_dashboard():
                 <h3 class="sec-sub">Materiaal {yr}</h3>{generate_yearly_gear(df_yr, df)}
                 <h3 class="sec-sub">Maandelijkse Voortgang</h3>{create_monthly_charts(df_yr, df_prev, yr)}
                 <h3 class="sec-sub">Diepte-analyse</h3>
-                <div class="chart-grid">{create_elevation_chart(df_yr)}{create_zone_pie(df_yr)}</div>
-                <div class="chart-grid">{create_scatter_plot(df_yr)}{create_heatmap(df_yr)}</div>
+                <div class="chart-grid">{create_heatmap(df_yr)}{create_zone_pie(df_yr)}</div>
                 <h3 class="sec-sub">Records {yr}</h3>{generate_hall_of_fame(df_yr)}
                 <h3 class="sec-sub">Logboek</h3>{generate_logbook(df_yr)}
             </div>"""
@@ -520,7 +512,7 @@ def genereer_dashboard():
         </script></body></html>"""
         
         with open('dashboard.html', 'w', encoding='utf-8') as f: f.write(html)
-        print("✅ Dashboard (V73.0) klaar: Merida is verwijderd en alle MTB-ritten vanaf september 2022 zijn Trek E-MTB!")
+        print("✅ Dashboard klaar: Grafieken aangepast naar Padel/Wandel/MTB sessies en Langste Duurtijd in Hall of fame gezet!")
     except Exception as e: print(f"❌ Fout: {e}")
 
 if __name__ == "__main__": genereer_dashboard()
