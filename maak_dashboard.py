@@ -47,14 +47,19 @@ def solve_dates(date_str):
 # --- CATEGORIE LOGICA ---
 def determine_category(row):
     t = str(row['Activiteitstype']).lower().strip(); n = str(row['Naam']).lower().strip()
+    
+    # Kracht gaat voor, zodat 'Krachttraining' niet per ongeluk bij Padel belandt
     if any(x in t for x in ['kracht', 'power', 'gym', 'fitness', 'weight']) or any(x in n for x in ['kracht', 'power', 'gym', 'fitness']): return 'Krachttraining'
+    
     if 'virtu' in t or 'zwift' in n: return 'Zwift'
     if any(x in t for x in ['fiets', 'ride', 'gravel', 'mtb', 'cycle', 'wieler', 'velomobiel', 'e-bike']): return 'Fiets'
     if any(x in t for x in ['hardloop', 'run', 'jog', 'lopen', 'loop']): return 'Hardlopen'
     if 'zwem' in t: return 'Zwemmen'
     if any(x in t for x in ['wandel', 'hike', 'walk']): return 'Wandelen'
-    if any(x in t for x in ['padel', 'tennis', 'squash']): return 'Padel'
-    if any(x in t for x in ['train', 'work', 'fit']): return 'Padel' 
+    
+    # Padel en Training (zowel in type als in naam)
+    if any(x in t for x in ['padel', 'tennis', 'squash', 'training', 'train']) or any(x in n for x in ['padel', 'training', 'train']): return 'Padel'
+    
     return 'Overig'
 
 def get_sport_style(cat):
