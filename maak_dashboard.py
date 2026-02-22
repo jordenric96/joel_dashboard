@@ -155,14 +155,14 @@ def generate_hall_of_fame(df):
         idx_dist = df_s['Afstand_km'].idxmax()
         if pd.notna(idx_dist):
             row = df_s.loc[idx_dist]
-            records.append({'label': 'Langste Afstand', 'val': f"{row['Afstand_km']:.1f} km", 'date': row['Datum'], 'icon': '📏'})
+            records.append({'label': 'Langste Afstand', 'val': f"{row['Afstand_km']:.1f} km", 'date': row['Datum'], 'icon': '📏', 'class': ''})
         
         if 'Mountainbike' in sport:
             df_speed = df_s[df_s['Gemiddelde_Snelheid_km_u'] > 10]
             if not df_speed.empty:
                 idx = df_speed['Gemiddelde_Snelheid_km_u'].idxmax()
                 row = df_speed.loc[idx]
-                records.append({'label': 'Hoogste Gem. Snelheid', 'val': f"{row['Gemiddelde_Snelheid_km_u']:.1f} km/u", 'date': row['Datum'], 'icon': '🚀'})
+                records.append({'label': 'Hoogste Gem. Snelheid', 'val': f"{row['Gemiddelde_Snelheid_km_u']:.1f} km/u", 'date': row['Datum'], 'icon': '🚀', 'class': 'rocket'})
         elif 'Wandelen' in sport:
              df_speed = df_s[(df_s['Gemiddelde_Snelheid_km_u'] > 3) & (df_s['Gemiddelde_Snelheid_km_u'] < 10)]
              if not df_speed.empty:
@@ -170,20 +170,21 @@ def generate_hall_of_fame(df):
                 row = df_speed.loc[idx]
                 pace_sec = 3600 / row['Gemiddelde_Snelheid_km_u']
                 pace = f"{int(pace_sec//60)}:{int(pace_sec%60):02d} /km"
-                records.append({'label': 'Snelste Tempo', 'val': pace, 'date': row['Datum'], 'icon': '⚡'})
+                records.append({'label': 'Snelste Tempo', 'val': pace, 'date': row['Datum'], 'icon': '⚡', 'class': ''})
 
         idx_time = df_s['Beweegtijd_sec'].idxmax()
         if pd.notna(idx_time):
              row = df_s.loc[idx_time]
-             records.append({'label': 'Langste Duur', 'val': format_time(row['Beweegtijd_sec']), 'date': row['Datum'], 'icon': '⏱️'})
+             records.append({'label': 'Langste Duur', 'val': format_time(row['Beweegtijd_sec']), 'date': row['Datum'], 'icon': '⏱️', 'class': ''})
         
         if not records: continue
 
         rec_html = ""
         for r in records:
+            icon_class = r.get('class', '')
             rec_html += f"""
             <div class="hof-record">
-                <div class="hof-icon" style="color:{style['color']}">{r['icon']}</div>
+                <div class="hof-icon {icon_class}" style="color:{style['color']}">{r['icon']}</div>
                 <div class="hof-data">
                     <div class="hof-label">{r['label']}</div>
                     <div class="hof-val">{r['val']}</div>
@@ -248,7 +249,7 @@ def generate_gear_section(df):
 
 def genereer_manifest():
     manifest = {
-        "name": "Sport Jorden",
+        "name": "Sport Joël",
         "short_name": "Sport",
         "start_url": "./dashboard.html",
         "display": "standalone",
@@ -259,7 +260,7 @@ def genereer_manifest():
     with open('manifest.json', 'w') as f: json.dump(manifest, f)
 
 def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html'):
-    print("🚀 Start Generatie V11 (Robuuste kolommen + MTB/Wandelen)...")
+    print("🚀 Start Generatie V12 (Herstel Joël + Rocket CSS + Koersverloop 23/24)...")
     try:
         df = pd.read_csv(csv_input)
     except:
@@ -280,7 +281,6 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
         'Uitrusting voor activiteit': 'Uitrusting voor activiteit', 'Activity Gear': 'Uitrusting voor activiteit'
     }
     
-    # Hernoem de kolommen die we kunnen vinden
     df = df.rename(columns=lambda x: rename_mapping.get(x.strip(), x))
 
     # --- VEILIGHEIDSCHECK ONTBREKENDE DATA ---
@@ -302,13 +302,10 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
         df['Gemiddelde_Snelheid_km_u'] *= 3.6
         if 'Max_Snelheid_km_u' in df.columns: df['Max_Snelheid_km_u'] *= 3.6
 
-    # --- NIEUWE LOGICA MTB & WANDELEN ---
-    
-    # 1. Filter Zwift en Hardlopen volledig eruit
+    # --- FILTER MTB & WANDELEN ---
     mask_exclude = df['Activiteitstype'].str.contains('Virtuele|Virtueel|Zwift|Hardloop|Run', case=False, na=False)
     df = df[~mask_exclude]
 
-    # 2. Alles met 'rit', 'ochtendrit', 'fiets' wordt Mountainbike, en krijgt 'Emtb trek' als uitrusting
     if 'Naam' in df.columns:
         mask_mtb = df['Naam'].str.contains('rit|ochtend|fiets|mountainbike|mtb', case=False, na=False) | \
                    df['Activiteitstype'].str.contains('fiets|ride|mountainbike|mtb', case=False, na=False)
@@ -321,13 +318,10 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
         df['Uitrusting voor activiteit'] = ''
     df.loc[mask_mtb, 'Uitrusting voor activiteit'] = 'Emtb trek'
 
-    # 3. Wandel/Hike samenvoegen tot 'Wandelen'
     mask_wandel = df['Activiteitstype'].str.contains('wandel|hike|walk', case=False, na=False)
     df.loc[mask_wandel, 'Activiteitstype'] = 'Wandelen'
 
-    # 4. Verwijder alle andere overgebleven sporten
     df = df[df['Activiteitstype'].isin(['Mountainbike', 'Wandelen'])]
-    
     # -------------------------------------
 
     if 'Datum' not in df.columns:
@@ -342,7 +336,6 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
     huidig_jaar = now.year
     max_datum = df['Datum'].max()
     
-    # Veiligheid voor lege data na filteren
     if pd.isna(max_datum):
         print("❌ Geen geldige data over na het filteren van de ritten.")
         return
@@ -354,6 +347,7 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
     nav_html = ""
     sections_html = ""
     jaren = sorted(df['Jaar'].dropna().unique(), reverse=True)
+    alle_jaren = list(df['Jaar'].dropna().unique())
     
     for jaar in jaren:
         is_cur = (jaar == max_datum.year)
@@ -375,15 +369,23 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
             {generate_kpi("Tijd", format_time(sc['t']), "⏱️", format_diff_html(time_diff_hours, 0, "u"))}
         </div>"""
         
+        # --- KOERSVERLOOP: Toon actieve jaar dik, 2023/2024 en andere jaren als vergelijking ---
+        fig = px.line(title=f"Koersverloop {int(jaar)}")
+        
+        # Voeg EERST de vergelijkingsjaren toe (zoals 2023 en 2024) zodat ze op de achtergrond staan
+        jaren_om_te_tonen = set([prev, 2023, 2024]) 
+        for y in sorted(jaren_om_te_tonen):
+            if y in alle_jaren and y != jaar:
+                df_y = df[df['Jaar'] == y].sort_values('DagVanJaar')[['DagVanJaar', 'Afstand_km']].copy()
+                df_y['Cum'] = df_y['Afstand_km'].cumsum()
+                if not df_y.empty:
+                    fig.add_scatter(x=df_y['DagVanJaar'], y=df_y['Cum'], name=f"{int(y)}", line_color=COLORS['chart_sec'], line_dash='dot', line_width=1.5)
+        
+        # Voeg DAARNA het huidige (actieve) jaar toe (dikke blauwe lijn)
         df_cum = df_j.sort_values('DagVanJaar')[['DagVanJaar', 'Afstand_km']].copy()
         df_cum['Cum'] = df_cum['Afstand_km'].cumsum()
-        df_cum_p = df_prev_all.sort_values('DagVanJaar')[['DagVanJaar', 'Afstand_km']].copy()
-        df_cum_p['Cum'] = df_cum_p['Afstand_km'].cumsum()
-        
-        fig = px.line(title=f"Koersverloop {int(jaar)}")
         fig.add_scatter(x=df_cum['DagVanJaar'], y=df_cum['Cum'], name=f"{int(jaar)}", line_color=COLORS['chart_main'], line_width=3)
-        if not df_cum_p.empty:
-            fig.add_scatter(x=df_cum_p['DagVanJaar'], y=df_cum_p['Cum'], name=f"{int(prev)}", line_color=COLORS['chart_sec'], line_dash='dot')
+        
         fig.update_layout(template='plotly_white', margin=dict(t=40,l=20,r=20,b=20), height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=1.1, x=0))
 
         nav_html += f'<button class="nav-btn {"active" if is_cur else ""}" onclick="openTab(event, \'view-{int(jaar)}\')">{int(jaar)}</button>'
@@ -447,7 +449,7 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
         <link rel="manifest" href="manifest.json">
         <link rel="apple-touch-icon" href="icon.png">
-        <title>Sportoverzicht Jorden</title>
+        <title>Sportoverzicht Joël</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
             :root {{ --primary: {COLORS['primary']}; --gold: {COLORS['gold']}; --bg: {COLORS['bg']}; --card: {COLORS['card']}; --text: {COLORS['text']}; }}
@@ -504,12 +506,19 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
             .full-width {{ grid-column: 1 / -1; }}
             .section-title {{ font-size: 18px; font-weight: 700; margin-bottom: 20px; color: var(--primary); }}
             .section-subtitle {{ font-size: 13px; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin: 30px 0 15px 0; letter-spacing:0.5px; }}
+
+            /* ROCKET CSS HERSTELD */
+            .rocket {{ display: inline-block; animation: fly 1.5s ease-in-out infinite alternate; transform-origin: center; }}
+            @keyframes fly {{
+                0% {{ transform: translateY(0px) rotate(0deg) scale(1); }}
+                100% {{ transform: translateY(-4px) rotate(15deg) scale(1.1); }}
+            }}
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
-                <h1>Sportoverzicht Jorden</h1>
+                <h1>Sportoverzicht Joël</h1>
                 <button class="lock-btn" onclick="unlock()">❤️ Hartslag 🔒</button>
             </div>
             
@@ -548,7 +557,7 @@ def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html')
     
     with open(html_output, 'w', encoding='utf-8') as f:
         f.write(html)
-    print("✅ Dashboard succesvol gegenereerd inclusief error-afhandeling!")
+    print("✅ Dashboard succesvol gegenereerd voor Joël (met Rocket & Koersverloop)!")
 
 if __name__ == "__main__":
     genereer_dashboard()
