@@ -185,11 +185,11 @@ def generate_streaks_box(df):
 
 def create_monthly_charts(df_cur, df_prev, year):
     months = ['Jan','Feb','Mrt','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
+    # Altijd voor 1 tot 12 maanden de sessies optellen
     def get_c(df, cat): return df[df['Categorie'] == cat].groupby(df['Datum'].dt.month).size().reindex(range(1,13), fill_value=0)
     
     html = '<div class="chart-grid">'
     
-    # 3 grafieken: MTB, Wandelen en Padel (alle 3 gefocust op Aantal Sessies)
     for cat, color, title in [('Mountainbike', COLORS['mountainbike'], '🚴 MTB (Sessies)'), 
                               ('Wandelen', COLORS['walk'], '🚶 Wandelen (Sessies)'),
                               ('Padel', COLORS['padel'], '🎾 Padel (Sessies)')]:
@@ -211,17 +211,8 @@ def create_heatmap(df_yr):
     if pivot.empty: return ""
     fig = go.Figure(data=go.Heatmap(z=pivot.values, x=[nl_days[d] for d in pivot.columns], y=pivot.index, colorscale=[[0, 'rgba(255,255,255,0.03)'], [1, COLORS['mountainbike']]], showscale=False))
     fig.update_layout(title='📅 Hittekaart (Wanneer sport je?)', template='plotly_dark', margin=dict(t=50,b=40,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(title='', range=[6, 23], fixedrange=True), xaxis=dict(fixedrange=True), font=dict(color='#94a3b8'))
-    return f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
-
-def create_zone_pie(df_yr):
-    df_hr = df_yr[(df_yr['Hartslag'] > 0) & (df_yr['Hartslag'].notna())].copy()
-    if df_hr.empty: return ""
-    df_hr['Zone'] = df_hr['Hartslag'].apply(determine_zone)
-    color_map = {'Z1 Herstel': COLORS['z1'], 'Z2 Duur': COLORS['z2'], 'Z3 Tempo': COLORS['z3'], 'Z4 Drempel': COLORS['z4'], 'Z5 Max': COLORS['z5']}
-    counts = df_hr['Zone'].value_counts().reset_index()
-    fig = go.Figure(data=[go.Pie(labels=counts['Zone'], values=counts['count'], hole=0.6, marker=dict(colors=[color_map.get(z, '#334155') for z in counts['Zone']]))])
-    fig.update_layout(title='❤️ Hartslagzones', template='plotly_dark', margin=dict(t=50,b=40,l=0,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#94a3b8'))
-    return f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
+    # Veranderd naar full-width box zodat hij over de gehele breedte staat
+    return f'<div class="chart-box full-width">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
 
 def generate_sport_cards(df_yr, df_prev_comp):
     html = '<div class="sport-grid">'
@@ -251,7 +242,9 @@ def generate_sport_cards(df_yr, df_prev_comp):
         
         if elev > 0: rows += f'<div class="stat-row"><span>Hoogtemeters</span><div class="val-group"><strong>⛰️ {elev:,.0f} m</strong>{format_diff_html(elev, elev_p)}</div></div>'                
         if pd.notna(wt) and wt>0: rows += f'<div class="stat-row"><span>Wattage</span><strong>⚡ {wt:.0f} W</strong></div>'
-        if pd.notna(hr) and hr>0: rows += f'<div class="stat-row"><span>Hartslag</span><strong class="secure-hr" data-hr="{hr:.0f}">❤️ ***</strong></div>'
+        
+        # Aangepast: Hartslag niet meer verborgen met slotje, gewoon altijd tonen
+        if pd.notna(hr) and hr>0: rows += f'<div class="stat-row"><span>Hartslag</span><strong>❤️ {hr:.0f} bpm</strong></div>'
         if cal > 0: rows += f'<div class="stat-row"><span>Energie</span><strong>🔥 {cal:,.0f} kcal</strong></div>'
             
         html += f"""<div class="sport-card"><div class="sport-header" style="color:{color}"><div class="icon-circle" style="background:rgba(255,255,255,0.05); border:1px solid {color}40;">{icon}</div><h3>{cat}</h3></div><div class="sport-body">{rows}</div></div>"""
@@ -311,22 +304,21 @@ def generate_yearly_gear(df_yr, df_all, all_time_mode=False):
 def generate_hall_of_fame(df):
     html = '<div class="hof-grid">'
     df_h = df.dropna(subset=['Datum']).copy()
-    # Padel is nu toegevoegd aan de Hall of Fame
-    for cat in ['Mountainbike', 'Wandelen', 'Padel']:
+    
+    # Aangepast: Padel is verwijderd, we tonen enkel MTB en Wandelen
+    for cat in ['Mountainbike', 'Wandelen']:
         df_s = df_h[df_h['Categorie'] == cat]
         if df_s.empty: continue
         icon, color = get_sport_style(cat)
         
         def t3(col,u=""):
             if col not in df_s.columns: return ""
-            # Enkel records groter dan 0 tellen
             ds = df_s[df_s[col] > 0].sort_values(col, ascending=False).head(3)
             if ds.empty: return ""
             
             r=""
             for i,(_,row) in enumerate(ds.iterrows()):
                 v=row[col]
-                # Format duurtijd mooi als "1u 30m"
                 if col == 'Beweegtijd_sec':
                     h, rem = divmod(v, 3600); m, _ = divmod(rem, 60)
                     val = f"{int(h)}u {int(m):02d}m" if h > 0 else f"{int(m)}m"
@@ -340,15 +332,11 @@ def generate_hall_of_fame(df):
                 </div>"""
             return r
             
-        secs = ""
-        # Geen afstand en snelheid voor Padel
-        if cat != 'Padel':
-            secs += f'<div class="hof-sec"><div class="sec-lbl">Langste Afstand</div>{t3("Afstand_km","km")}</div>'
-            
-        # Duurtijd toegevoegd voor alle sporten in de plaats van hoogtemeters
+        secs = f'<div class="hof-sec"><div class="sec-lbl">Langste Afstand</div>{t3("Afstand_km","km")}</div>'
         secs += f'<div class="hof-sec" style="margin-top:10px;"><div class="sec-lbl">Langste Duurtijd</div>{t3("Beweegtijd_sec")}</div>'
         
-        if cat != 'Padel':
+        # Aangepast: Enkel gemiddelde snelheid tonen voor MTB
+        if cat == 'Mountainbike':
             secs += f'<div class="hof-sec" style="margin-top:10px;"><div class="sec-lbl">Snelste Gem.</div>{t3("Gem_Snelheid","km/u")}</div>'
             
         html += f"""<div class="hof-card"><div class="hof-header" style="color:{color}; font-size:18px; font-weight:700; display:flex; gap:8px; align-items:center; margin-bottom:15px;">{icon} {cat}</div>{secs}</div>"""
@@ -358,8 +346,11 @@ def generate_logbook(df):
     rows = ""
     for _, r in df.sort_values('Datum', ascending=False).iterrows():
         km = f"{r['Afstand_km']:.1f}" if r['Afstand_km'] > 0 else "-"
-        rows += f"<tr><td>{r['Datum'].strftime('%d-%m')}</td><td>{get_sport_style(r['Categorie'])[0]}</td><td>{r['Naam']}</td><td align='right'><strong>{km}</strong></td></tr>"
-    return f'<div class="chart-box full-width" style="overflow-x:auto;"><table class="log-table" style="min-width:600px;"><thead><tr><th>Datum</th><th>Type</th><th>Naam activiteit</th><th align="right">km</th></tr></thead><tbody>{rows}</tbody></table></div>'
+        # Aangepast: Hartslag is toegevoegd
+        hr = f"{r['Hartslag']:.0f}" if pd.notna(r['Hartslag']) and r['Hartslag'] > 0 else "-"
+        
+        rows += f"<tr><td>{r['Datum'].strftime('%d-%m')}</td><td>{get_sport_style(r['Categorie'])[0]}</td><td>{r['Naam']}</td><td align='center'>{hr}</td><td align='right'><strong>{km}</strong></td></tr>"
+    return f'<div class="chart-box full-width" style="overflow-x:auto;"><table class="log-table" style="min-width:600px;"><thead><tr><th>Datum</th><th>Type</th><th>Naam activiteit</th><th align="center">❤️ bpm</th><th align="right">km</th></tr></thead><tbody>{rows}</tbody></table></div>'
 
 def generate_kpi(lbl, val, icon, diff_html, unit=""):
     val_html = f"{val}"
@@ -370,7 +361,7 @@ def generate_kpi(lbl, val, icon, diff_html, unit=""):
 
 # --- MAIN ---
 def genereer_dashboard():
-    print("🚀 Start V75.0 (3 Maandgrafieken, Duurtijd in Hall of Fame, Geen Scatter/Hoogte)...")
+    print("🚀 Start V76.0 (Open Hartslag, Padel Records weg, Hittekaart full width)...")
     try:
         df = pd.read_csv('activities.csv')
         nm = {'Datum van activiteit':'Datum', 'Naam activiteit':'Naam', 'Activiteitstype':'Activiteitstype', 'Beweegtijd':'Beweegtijd_sec', 'Afstand':'Afstand_km', 'Gemiddelde hartslag':'Hartslag', 'Gemiddelde snelheid':'Gem_Snelheid', 'Uitrusting voor activiteit':'Gear', 'Calorieën':'Calorieën', 'Hoogteverschil':'Hoogtemeters', 'Elevatiewinst':'Hoogtemeters'}
@@ -425,7 +416,7 @@ def genereer_dashboard():
                 <h3 class="sec-sub">Materiaal {yr}</h3>{generate_yearly_gear(df_yr, df)}
                 <h3 class="sec-sub">Maandelijkse Voortgang</h3>{create_monthly_charts(df_yr, df_prev, yr)}
                 <h3 class="sec-sub">Diepte-analyse</h3>
-                <div class="chart-grid">{create_heatmap(df_yr)}{create_zone_pie(df_yr)}</div>
+                {create_heatmap(df_yr)}
                 <h3 class="sec-sub">Records {yr}</h3>{generate_hall_of_fame(df_yr)}
                 <h3 class="sec-sub">Logboek</h3>{generate_logbook(df_yr)}
             </div>"""
@@ -434,6 +425,7 @@ def genereer_dashboard():
         nav += '<button class="nav-btn" onclick="openTab(event, \'v-Tot\')">Carrière</button>'
         sects += f'<div id="v-Tot" class="tab-content" style="display:none"><h2 class="sec-title" style="color:var(--text);">All-Time Garage</h2>{generate_yearly_gear(df, df, True)}<h3 class="sec-sub">All-Time Records</h3>{generate_hall_of_fame(df)}</div>'
         
+        # Aangepast: Lock button is weggehaald uit de header
         html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>⚡ Sportoverzicht</title>
@@ -453,7 +445,6 @@ def genereer_dashboard():
         .container{{width:96%; max-width:1400px; margin:0 auto;}}
         
         .header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}}
-        .lock-btn{{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:6px 12px;border-radius:20px;cursor:pointer; font-family:'Poppins',sans-serif; color:white;}}
         
         .nav{{display:flex;gap:8px;overflow-x:auto;padding:10px 0;scrollbar-width:none;position:sticky;top:0;z-index:100;background:var(--bg);}}
         .nav-btn{{font-family:inherit;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer; color:var(--text_light); transition:0.2s; flex-shrink: 0;}}
@@ -490,7 +481,7 @@ def genereer_dashboard():
         .streak-sub{{font-size:11px;color:var(--text_light);}}
         .icon-circle{{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;}}
         </style></head><body><div class="container">
-        <div class="header"><h1 style="font-size:28px;font-weight:800;letter-spacing:-1px;margin:0; background: -webkit-linear-gradient(45deg, #00e5ff, #10b981); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">⚡ Sportoverzicht</h1><button class="lock-btn" onclick="unlock()">❤️ 🔒</button></div>
+        <div class="header"><h1 style="font-size:28px;font-weight:800;letter-spacing:-1px;margin:0; background: -webkit-linear-gradient(45deg, #00e5ff, #10b981); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">⚡ Sportoverzicht</h1></div>
         <div class="nav">{nav}</div>{sects}</div>
         <script>
         function openTab(e,n){{
@@ -501,18 +492,10 @@ def genereer_dashboard():
             window.scrollTo({{top:0, behavior:'smooth'}});
             setTimeout(() => {{ window.dispatchEvent(new Event('resize')); }}, 50);
         }}
-        function unlock(){{
-            if(prompt("Wachtwoord:")==='Nala'){{
-                document.querySelectorAll('.secure-hr').forEach(e => {{
-                    e.innerHTML = '❤️ ' + e.getAttribute('data-hr');
-                }});
-                document.querySelector('.lock-btn').style.display='none';
-            }}
-        }}
         </script></body></html>"""
         
         with open('dashboard.html', 'w', encoding='utf-8') as f: f.write(html)
-        print("✅ Dashboard klaar: Grafieken aangepast naar Padel/Wandel/MTB sessies en Langste Duurtijd in Hall of fame gezet!")
+        print("✅ Dashboard (V76.0) klaar: Hartslag open + logboek, geen padel records en hittekaart over de hele breedte!")
     except Exception as e: print(f"❌ Fout: {e}")
 
 if __name__ == "__main__": genereer_dashboard()
