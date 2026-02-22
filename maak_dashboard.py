@@ -13,18 +13,18 @@ PLOT_CONFIG = {'displayModeBar': False, 'staticPlot': False, 'scrollZoom': False
 
 HR_ZONES = {'Z1 Herstel': 135, 'Z2 Duur': 152, 'Z3 Tempo': 168, 'Z4 Drempel': 180, 'Z5 Max': 220}
 
-# TDT ROCKETS DARK MODE THEMA
+# TDT ROCKETS DARK MODE THEMA (Diepblauw met felle neon kleuren)
 COLORS = {
-    'primary': '#00e5ff',      
-    'gold': '#facc15',         
-    'bg': '#0b0914',           
-    'card': '#1e1b4b',         
+    'primary': '#00e5ff',      # Neon Cyan
+    'gold': '#facc15',         # Neon Geel
+    'bg': '#0b0914',           # Zeer donker blauw/zwart
+    'card': '#1e1b4b',         # Diepblauw (Indigo)
     'text': '#f8fafc',         
     'text_light': '#94a3b8',   
     
-    'bike_out': '#00e5ff',     # Mountainbike
-    'walk': '#a855f7',         # Wandelen
-    'padel': '#10b981',        # Padel
+    'bike_out': '#00e5ff',     # Mountainbike (Neon Cyan)
+    'walk': '#a855f7',         # Wandelen (Neon Paars)
+    'padel': '#10b981',        # Padel (Neon Groen)
     
     'default': '#94a3b8', 'ref_gray': '#334155',
     'z1': '#a3e635', 'z2': '#facc15', 'z3': '#fb923c', 'z4': '#f87171', 'z5': '#ef4444'
@@ -161,12 +161,12 @@ def generate_streaks_box(df):
         <h3 class="box-title">🔥 MOTIVATIE REEKSEN</h3>
         <div class="streaks-container" style="display:flex; gap:30px; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
-                <div class="streak-row"><span class="label">Huidig Wekelijks:</span><span class="val" style="color:var(--primary);">{s.get('cur_week',0)} weken</span></div>
+                <div class="streak-row"><span class="label">Huidig Wekelijks:</span><span class="val" style="color:var(--primary); text-shadow: 0 0 5px rgba(0,229,255,0.5);">{s.get('cur_week',0)} weken</span></div>
                 <div class="streak-row"><span class="label">Record Wekelijks:</span><span class="val" style="color:var(--text);">{s.get('max_week',0)} weken</span></div>
                 <div class="streak-sub">{s.get('max_week_dates','-')}</div>
             </div>
             <div style="flex:1; min-width:200px;">
-                <div class="streak-row"><span class="label">Huidig Dagelijks:</span><span class="val" style="color:var(--primary);">{s.get('cur_day',0)} dagen</span></div>
+                <div class="streak-row"><span class="label">Huidig Dagelijks:</span><span class="val" style="color:var(--primary); text-shadow: 0 0 5px rgba(0,229,255,0.5);">{s.get('cur_day',0)} dagen</span></div>
                 <div class="streak-row"><span class="label">Record Dagelijks:</span><span class="val" style="color:var(--text);">{s.get('max_day',0)} dagen</span></div>
                 <div class="streak-sub">{s.get('max_day_dates','-')}</div>
             </div>
@@ -262,10 +262,13 @@ def generate_sport_cards(df_yr, df_prev_comp):
                         <div class="stat-row"><span>Snelheid</span><strong>{spd}</strong></div>"""
                         
         if pd.notna(wt) and wt>0: rows += f'<div class="stat-row"><span>Wattage</span><strong>⚡ {wt:.0f} W</strong></div>'
-        if pd.notna(hr) and hr>0: rows += f'<div class="stat-row"><span>Hartslag</span><strong class="secure-hr" data-hr="{hr:.0f}">❤️ ***</strong></div>'
+        
+        # Wachtwoord verwijderd, hartslag is direct zichtbaar!
+        if pd.notna(hr) and hr>0: rows += f'<div class="stat-row"><span>Hartslag</span><strong>❤️ {hr:.0f} bpm</strong></div>'
+        
         if cal > 0: rows += f'<div class="stat-row"><span>Energie</span><strong>🔥 {cal:,.0f} kcal</strong></div>'
             
-        html += f"""<div class="sport-card"><div class="sport-header" style="color:{color}"><div class="icon-circle" style="background:rgba(255,255,255,0.05); border:1px solid {color}40;">{icon}</div><h3>{cat}</h3></div><div class="sport-body">{rows}</div></div>"""
+        html += f"""<div class="sport-card" style="box-shadow: 0 4px 15px {color}20; border: 1px solid {color}40;"><div class="sport-header" style="color:{color}; text-shadow: 0 0 8px {color}80;"><div class="icon-circle" style="background:rgba(255,255,255,0.05); border:1px solid {color}60;">{icon}</div><h3>{cat}</h3></div><div class="sport-body">{rows}</div></div>"""
     return html + '</div>'
 
 def generate_yearly_gear(df_yr, df_all, all_time_mode=False):
@@ -347,7 +350,7 @@ def generate_hall_of_fame(df):
             secs = f'<div class="hof-sec"><div class="sec-lbl">Langste Afstand</div>{t3("Afstand_km","km")}</div>'
             secs += f'<div class="hof-sec" style="margin-top:10px;"><div class="sec-lbl">Snelste Gem.</div>{t3("Gem_Snelheid","km/u",cat=="Wandelen")}</div>'
             
-        html += f"""<div class="hof-card"><div class="hof-header" style="color:{color}; font-size:18px; font-weight:700; display:flex; gap:8px; align-items:center; margin-bottom:15px;">{icon} {cat}</div>{secs}</div>"""
+        html += f"""<div class="hof-card"><div class="hof-header" style="color:{color}; text-shadow: 0 0 5px {color}80; font-size:18px; font-weight:700; display:flex; gap:8px; align-items:center; margin-bottom:15px;">{icon} {cat}</div>{secs}</div>"""
     return html + '</div>'
 
 def generate_logbook(df):
@@ -366,7 +369,7 @@ def generate_kpi(lbl, val, icon, diff_html, unit=""):
 
 # --- MAIN ---
 def genereer_dashboard():
-    print("🚀 Start V72.0 (TDT Thema + MTB/Wandel/Padel focus)...")
+    print("🚀 Start V73.0 (Diepblauw Neon Thema + Vrije Hartslag + MTB/Wandel/Padel focus)...")
     try:
         df = pd.read_csv('activities.csv')
         nm = {'Datum van activiteit':'Datum', 'Naam activiteit':'Naam', 'Activiteitstype':'Activiteitstype', 'Beweegtijd':'Beweegtijd_sec', 'Afstand':'Afstand_km', 'Gemiddelde hartslag':'Hartslag', 'Gemiddelde snelheid':'Gem_Snelheid', 'Uitrusting voor activiteit':'Gear', 'Calorieën':'Calorieën'}
@@ -421,6 +424,7 @@ def genereer_dashboard():
         nav += '<button class="nav-btn" onclick="openTab(event, \'v-Tot\')">Carrière</button>'
         sects += f'<div id="v-Tot" class="tab-content" style="display:none"><h2 class="sec-title" style="color:var(--text);">All-Time Garage</h2>{generate_yearly_gear(df, df, True)}<h3 class="sec-sub">All-Time Records</h3>{generate_hall_of_fame(df)}</div>'
         
+        # Wachtwoord knop verwijderd uit de header HTML!
         html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>⚡ Sportoverzicht</title>
@@ -440,11 +444,10 @@ def genereer_dashboard():
         .container{{width:96%; max-width:1400px; margin:0 auto;}}
         
         .header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}}
-        .lock-btn{{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:6px 12px;border-radius:20px;cursor:pointer; font-family:'Poppins',sans-serif; color:white;}}
         
         .nav{{display:flex;gap:8px;overflow-x:auto;padding:10px 0;scrollbar-width:none;position:sticky;top:0;z-index:100;background:var(--bg);}}
         .nav-btn{{font-family:inherit;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer; color:var(--text_light); transition:0.2s; flex-shrink: 0;}}
-        .nav-btn.active{{background:linear-gradient(45deg, #ff007f, #00e5ff);color:white; border:none; box-shadow:0 4px 15px rgba(0,229,255,0.2);}}
+        .nav-btn.active{{background:linear-gradient(45deg, #ff007f, #00e5ff);color:white; border:none; box-shadow:0 4px 15px rgba(0,229,255,0.4);}}
         
         .kpi-grid, .sport-grid, .hof-grid, .chart-grid {{display:grid; gap:12px; margin-bottom:20px; width: 100%;}}
         .kpi-grid{{grid-template-columns:repeat(2, 1fr);}} 
@@ -457,7 +460,7 @@ def genereer_dashboard():
             padding:15px; 
             border-radius:16px; 
             border:1px solid rgba(255,255,255,0.05); 
-            box-shadow:0 4px 10px rgba(0,0,0,0.3);
+            box-shadow:0 6px 15px rgba(0,0,0,0.4);
             width: 100%;
         }}
         .chart-box, .chart-grid {{ max-width: 100%; overflow-x: hidden; }}
@@ -465,7 +468,7 @@ def genereer_dashboard():
         .streaks-section {{ margin-bottom: 25px; width: 100%; }}
         
         .sec-title {{font-size:22px;font-weight:800;letter-spacing:-0.5px;margin:0 0 15px 0;color:var(--text)}}
-        .sec-sub{{font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:35px 0 10px 0;border-bottom:2px solid rgba(255,255,255,0.05);padding-bottom:5px;color:var(--primary);font-weight:800; display:inline-block;}}
+        .sec-sub{{font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:35px 0 10px 0;border-bottom:2px solid rgba(255,255,255,0.05);padding-bottom:5px;color:var(--primary); text-shadow: 0 0 5px rgba(0,229,255,0.4); font-weight:800; display:inline-block;}}
         .sec-lbl{{font-size:10px;text-transform:uppercase;color:var(--text_light);font-weight:700;margin-top:5px;}}
         .box-title{{font-size:11px;color:var(--text_light);text-transform:uppercase;margin-bottom:12px;letter-spacing:0.5px;font-weight:700}}
         
@@ -478,7 +481,7 @@ def genereer_dashboard():
         .streak-sub{{font-size:11px;color:var(--text_light);}}
         .icon-circle{{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;}}
         </style></head><body><div class="container">
-        <div class="header"><h1 style="font-size:28px;font-weight:800;letter-spacing:-1px;margin:0; background: -webkit-linear-gradient(45deg, #ff007f, #00e5ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">⚡ Sportoverzicht</h1><button class="lock-btn" onclick="unlock()">❤️ 🔒</button></div>
+        <div class="header"><h1 style="font-size:28px;font-weight:800;letter-spacing:-1px;margin:0; background: -webkit-linear-gradient(45deg, #ff007f, #00e5ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">⚡ Sportoverzicht</h1></div>
         <div class="nav">{nav}</div>{sects}</div>
         <script>
         function openTab(e,n){{
@@ -489,18 +492,10 @@ def genereer_dashboard():
             window.scrollTo({{top:0, behavior:'smooth'}});
             setTimeout(() => {{ window.dispatchEvent(new Event('resize')); }}, 50);
         }}
-        function unlock(){{
-            if(prompt("Wachtwoord:")==='Nala'){{
-                document.querySelectorAll('.secure-hr').forEach(e => {{
-                    e.innerHTML = '❤️ ' + e.getAttribute('data-hr');
-                }});
-                document.querySelector('.lock-btn').style.display='none';
-            }}
-        }}
         </script></body></html>"""
         
         with open('dashboard.html', 'w', encoding='utf-8') as f: f.write(html)
-        print("✅ Dashboard (V72.0) klaar: Thema behouden en perfect afgesteld op MTB, Wandelen en Padel!")
+        print("✅ Dashboard (V73.0) klaar: Diepblauwe glow, open hartslag, en gericht op MTB/Wandelen/Padel!")
     except Exception as e: print(f"❌ Fout: {e}")
 
 if __name__ == "__main__": genereer_dashboard()
