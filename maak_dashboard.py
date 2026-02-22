@@ -2,498 +2,519 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import warnings
-import re
-
-warnings.filterwarnings("ignore", category=UserWarning)
+import plotly.io as pio
+from datetime import datetime
+import json
+import os
 
 # --- CONFIGURATIE ---
-PLOT_CONFIG = {'displayModeBar': False, 'staticPlot': False, 'scrollZoom': False, 'responsive': True}
-
-HR_ZONES = {'Z1 Herstel': 135, 'Z2 Duur': 152, 'Z3 Tempo': 168, 'Z4 Drempel': 180, 'Z5 Max': 220}
-
-# TDT ROCKETS DARK MODE THEMA
 COLORS = {
-    'primary': '#00e5ff',      
-    'gold': '#facc15',         
-    'bg': '#0b0914',           
-    'card': '#1e1b4b',         
-    'text': '#f8fafc',         
-    'text_light': '#94a3b8',   
-    
-    'zwift': '#ff007f',        
-    'bike_out': '#00e5ff',     
-    'run': '#facc15',          
-    
-    'swim': '#3b82f6', 'padel': '#10b981', 'walk': '#a855f7', 
-    'strength': '#ec4899', 'default': '#94a3b8', 'ref_gray': '#334155',
-    'z1': '#a3e635', 'z2': '#facc15', 'z3': '#fb923c', 'z4': '#f87171', 'z5': '#ef4444'
+    'primary': '#0f172a',
+    'gold': '#d4af37',
+    'bg': '#f8fafc',
+    'card': '#ffffff',
+    'text': '#1e293b',
+    'text_light': '#64748b',
+    'success': '#10b981',
+    'danger': '#ef4444',
+    'chart_main': '#3b82f6',
+    'chart_sec': '#cbd5e1'
 }
 
-YEAR_COLORS = ['#ff007f', '#00e5ff', '#facc15', '#a855f7', '#10b981']
+SPORT_CONFIG = {
+    'Mountainbike': {'icon': '🚵', 'color': '#0ea5e9'},
+    'Wandelen': {'icon': '🥾', 'color': '#10b981'},
+    'Default': {'icon': '🏅', 'color': '#64748b'}
+}
 
-# --- DATUM FIX ---
-def solve_dates(date_str):
-    if pd.isna(date_str) or str(date_str).strip() == "": return pd.NaT
-    d_map = {'jan':1,'feb':2,'mrt':3,'apr':4,'mei':5,'jun':6,'jul':7,'aug':8,'sep':9,'okt':10,'nov':11,'dec':12}
-    try:
-        clean = re.sub(r'[^a-zA-Z0-9\s:]', '', str(date_str).lower())
-        parts = clean.split()
-        day, month_str, year = int(parts[0]), parts[1][:3], int(parts[2])
-        return pd.Timestamp(year=year, month=d_map.get(month_str, 1), day=day, hour=12) 
-    except: return pd.to_datetime(date_str, errors='coerce')
+# --- HULPFUNCTIES ---
 
-# --- CATEGORIE LOGICA ---
-def determine_category(row):
-    t = str(row['Activiteitstype']).lower().strip(); n = str(row['Naam']).lower().strip()
-    
-    if any(x in t for x in ['kracht', 'power', 'gym', 'fitness', 'weight']) or any(x in n for x in ['kracht', 'power', 'gym', 'fitness']): return 'Krachttraining'
-    if 'virtu' in t or 'zwift' in n: return 'Zwift'
-    # Alle buitenritten heten nu Mountainbike
-    if any(x in t for x in ['fiets', 'ride', 'gravel', 'mtb', 'cycle', 'wieler', 'velomobiel', 'e-bike']): return 'Mountainbike'
-    if any(x in t for x in ['hardloop', 'run', 'jog', 'lopen', 'loop']): return 'Hardlopen'
-    if 'zwem' in t: return 'Zwemmen'
-    if any(x in t for x in ['wandel', 'hike', 'walk']): return 'Wandelen'
-    if any(x in t for x in ['padel', 'tennis', 'squash', 'training', 'train']) or any(x in n for x in ['padel', 'training', 'train']): return 'Padel'
-    return 'Overig'
-
-def get_sport_style(cat):
-    styles = {
-        'Mountainbike':('🚴', COLORS['bike_out']), 'Zwift':('👾', COLORS['zwift']), 
-        'Hardlopen':('🏃', COLORS['run']), 'Wandelen':('🚶', COLORS['walk']), 
-        'Padel':('🎾', COLORS['padel']), 'Zwemmen':('🏊', COLORS['swim']),
-        'Krachttraining': ('🏋️', COLORS['strength'])
-    }
-    return styles.get(cat, ('🏅', COLORS['default']))
-
-def determine_zone(hr):
-    if pd.isna(hr) or hr == 0: return 'Onbekend'
-    if hr < HR_ZONES['Z1 Herstel']: return 'Z1 Herstel'
-    if hr < HR_ZONES['Z2 Duur']: return 'Z2 Duur'
-    if hr < HR_ZONES['Z3 Tempo']: return 'Z3 Tempo'
-    if hr < HR_ZONES['Z4 Drempel']: return 'Z4 Drempel'
-    return 'Z5 Max'
-
-# --- HELPERS ---
 def format_time(seconds):
     if pd.isna(seconds) or seconds <= 0: return '-'
-    h, r = divmod(int(seconds), 3600); m, _ = divmod(r, 60)
-    return f'{h}u {m:02d}m'
+    seconds = int(seconds)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, _ = divmod(remainder, 60)
+    return f'{hours}u {minutes:02d}m'
 
-def format_diff_html(cur, prev, unit=""):
-    if pd.isna(prev) and cur == 0: return '<span style="color:#64748b">-</span>'
-    diff = cur - (prev if pd.notna(prev) else 0)
-    color = '#10b981' if diff >= 0 else '#ef4444'
-    arrow = "▲" if diff >= 0 else "▼"
-    return f'<span style="color:{color}; font-weight:700; font-size:0.85em; font-family: monospace;">{arrow} {abs(diff):.1f} {unit}</span>'
+def format_diff_html(current, previous, unit="", inverse=False):
+    if pd.isna(previous): previous = 0
+    diff = current - previous
+    if diff == 0: return '<span class="diff-neutral">-</span>'
+    is_good = (diff > 0) if not inverse else (diff < 0)
+    color = COLORS['success'] if is_good else COLORS['danger']
+    arrow = "▲" if diff > 0 else "▼"
+    if unit == 'u': val_str = f"{abs(diff):.1f}"
+    else: val_str = f"{abs(diff):.1f}" if isinstance(diff, float) else f"{abs(int(diff))}"
+    bg = f"{color}15"
+    return f'<span style="color:{color}; background:{bg}; padding:2px 8px; border-radius:6px; font-weight:700; font-size:0.85em;">{arrow} {val_str} {unit}</span>'
 
-# --- UI GENERATORS ---
-def create_ytd_chart(df, current_year):
-    fig = go.Figure()
-    years_to_plot = sorted(df['Jaar'].unique(), reverse=True)[:5]
+def get_sport_style(sport_name):
+    for key, config in SPORT_CONFIG.items():
+        if key.lower() in str(sport_name).lower():
+            return config
+    return SPORT_CONFIG['Default']
+
+def robust_date_parser(date_series):
+    dutch_month_mapping = {
+        'jan': 'Jan', 'feb': 'Feb', 'mrt': 'Mar', 'apr': 'Apr', 
+        'mei': 'May', 'jun': 'Jun', 'jul': 'Jul', 'aug': 'Aug', 
+        'sep': 'Sep', 'okt': 'Oct', 'nov': 'Nov', 'dec': 'Dec'
+    }
+    date_series_str = date_series.astype(str).str.lower()
+    for dutch, eng in dutch_month_mapping.items():
+        date_series_str = date_series_str.str.replace(dutch, eng, regex=False)
+    dates = pd.to_datetime(date_series_str, format='%d %b %Y, %H:%M:%S', errors='coerce')
+    mask = dates.isna()
+    if mask.any():
+        dates[mask] = pd.to_datetime(date_series_str[mask], errors='coerce', dayfirst=True)
+    return dates
+
+# --- HTML GENERATOREN ---
+
+def generate_kpi(title, value, icon="", diff=""):
+    return f"""
+    <div class="kpi-card">
+        <div class="kpi-icon-box">{icon}</div>
+        <div class="kpi-content">
+            <div class="kpi-title">{title}</div>
+            <div class="kpi-value">{value}</div>
+            <div class="kpi-sub">{diff}</div>
+        </div>
+    </div>
+    """
+
+def generate_sport_cards(df_cur, df_prev):
+    html = '<div class="sport-grid">'
+    sports = sorted(df_cur['Activiteitstype'].unique())
     
-    for i, y in enumerate(years_to_plot):
-        df_y = df[df['Jaar'] == y].groupby('Day')['Afstand_km'].sum().reset_index()
-        if df_y.empty: continue
-        
-        all_days = pd.DataFrame({'Day': range(1, 367)})
-        df_y = pd.merge(all_days, df_y, on='Day', how='left').fillna(0)
-        df_y['Cum_Afstand'] = df_y['Afstand_km'].cumsum()
-        
-        if y == datetime.now().year:
-            current_day = datetime.now().timetuple().tm_yday
-            df_y.loc[df_y['Day'] > current_day, 'Cum_Afstand'] = np.nan
+    for sport in sports:
+        df_s_cur = df_cur[df_cur['Activiteitstype'] == sport]
+        if df_prev is not None and not df_prev.empty:
+            df_s_prev = df_prev[df_prev['Activiteitstype'] == sport]
+            prev_count = len(df_s_prev)
+            prev_dist = df_s_prev['Afstand_km'].sum()
+        else:
+            prev_count = 0; prev_dist = 0
             
-        color = YEAR_COLORS[i % len(YEAR_COLORS)]
-        width = 4 if y == current_year else 2
+        style = get_sport_style(sport)
+        count = len(df_s_cur)
+        dist = df_s_cur['Afstand_km'].sum()
+        time = df_s_cur['Beweegtijd_sec'].sum()
+        avg_hr = df_s_cur['Gemiddelde_Hartslag'].mean()
         
-        fig.add_trace(go.Scatter(
-            x=df_y['Day'], y=df_y['Cum_Afstand'], 
-            mode='lines', name=str(y), 
-            line=dict(color=color, width=width),
-            hovertemplate=f"<b>{y}</b><br>Dag %{{x}}<br>%{{y:.0f}} km<extra></extra>"
-        ))
+        diff_count = format_diff_html(count, prev_count)
+        diff_dist = format_diff_html(dist, prev_dist, "km")
         
-    fig.update_layout(
-        title='📈 Aantal km\'s', 
-        template='plotly_dark', 
-        margin=dict(t=50, b=60, l=0, r=10),
-        height=380, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(title="", showgrid=False, fixedrange=True), 
-        yaxis=dict(title="", showgrid=True, gridcolor='rgba(255,255,255,0.05)', fixedrange=True, side="right"), 
-        legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), 
-        font=dict(color='#94a3b8')
-    )
-    return f'<div class="chart-box full-width">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
+        dist_html = f"""<div class="stat-col"><div class="label">Afstand</div><div class="val">{dist:,.0f} <small>km</small></div><div class="sub">{diff_dist}</div></div>"""
 
-def calculate_streaks(df):
-    valid = df.dropna(subset=['Datum']).sort_values('Datum')
-    if valid.empty: return {}
-    valid['WeekStart'] = valid['Datum'].dt.to_period('W-MON').dt.start_time
-    weeks = sorted(valid['WeekStart'].unique()); days = sorted(valid['Datum'].dt.date.unique())
-    cur_wk, max_wk, max_wk_dates = 0, 0, "-"
-    if weeks:
-        if (pd.Timestamp.now().to_period('W-MON').start_time - weeks[-1]).days <= 7:
-            cur_wk = 1
-            for i in range(len(weeks)-2, -1, -1):
-                if (weeks[i+1]-weeks[i]).days == 7: cur_wk+=1
-                else: break
-        temp, start = 1, weeks[0]; max_wk, max_wk_dates = 1, f"({weeks[0].strftime('%d %b %y')})"
-        for i in range(1, len(weeks)):
-            if (weeks[i]-weeks[i-1]).days == 7: temp+=1
-            else:
-                if temp > max_wk: max_wk = temp; max_wk_dates = f"({start.strftime('%d %b %y')} - {(weeks[i-1]+timedelta(days=6)).strftime('%d %b %y')})"
-                temp = 1; start = weeks[i]
-        if temp > max_wk: max_wk = temp; max_wk_dates = f"({start.strftime('%d %b %y')} - {(weeks[-1]+timedelta(days=6)).strftime('%d %b %y')})"
-    cur_d, max_d, max_d_dates = 0, 0, "-"
-    if days:
-        if (datetime.now().date() - days[-1]).days <= 1: cur_d = 1
-        for i in range(len(days)-2, -1, -1):
-            if (days[i+1]-days[i]).days == 1: cur_d+=1
-            else: break
-        temp, start = 1, days[0]; max_d, max_d_dates = 1, f"({days[0].strftime('%d %b')})"
-        for i in range(1, len(days)):
-            if (days[i]-days[i-1]).days == 1: temp+=1
-            else:
-                if temp > max_d: max_d = temp; max_d_dates = f"({start.strftime('%d %b')} - {days[i-1].strftime('%d %b %y')})"
-                temp = 1; start = days[i]
-        if temp > max_d: max_d = temp; max_d_dates = f"({start.strftime('%d %b')} - {days[-1].strftime('%d %b %y')})"
-    return {'cur_week':cur_wk, 'max_week':max_wk, 'max_week_dates':max_wk_dates, 'cur_day':cur_d, 'max_day':max_d, 'max_day_dates':max_d_dates}
+        extra_stat = ""
+        if 'Mountainbike' in sport:
+            real_rides = df_s_cur[df_s_cur['Afstand_km'] > 5]
+            max_spd = real_rides['Gemiddelde_Snelheid_km_u'].max() if not real_rides.empty else 0
+            if max_spd > 0: extra_stat = f'<div class="stat-row"><span>Snelste rit (gem)</span> <strong>{max_spd:.1f} km/u</strong></div>'
+        else:
+            max_dst = df_s_cur['Afstand_km'].max()
+            if max_dst > 0: extra_stat = f'<div class="stat-row"><span>Langste</span> <strong>{max_dst:.1f} km</strong></div>'
+        
+        hr_html = f'<div class="stat-row"><span>Gem. Hartslag</span> <strong class="hr-blur">{avg_hr:.0f} bpm</strong></div>' if pd.notna(avg_hr) else ""
 
-def generate_streaks_box(df):
-    s = calculate_streaks(df)
-    return f"""<div class="streaks-section">
-        <h3 class="box-title">🔥 MOTIVATIE REEKSEN</h3>
-        <div class="streaks-container" style="display:flex; gap:30px; flex-wrap:wrap;">
-            <div style="flex:1; min-width:200px;">
-                <div class="streak-row"><span class="label">Huidig Wekelijks:</span><span class="val" style="color:var(--primary);">{s['cur_week']} weken</span></div>
-                <div class="streak-row"><span class="label">Record Wekelijks:</span><span class="val" style="color:var(--text);">{s['max_week']} weken</span></div>
-                <div class="streak-sub">{s['max_week_dates']}</div>
+        html += f"""
+        <div class="sport-card">
+            <div class="sport-header">
+                <div class="sport-icon-circle" style="background:{style['color']}20; color:{style['color']}">{style['icon']}</div>
+                <h3>{sport}</h3>
             </div>
-            <div style="flex:1; min-width:200px;">
-                <div class="streak-row"><span class="label">Huidig Dagelijks:</span><span class="val" style="color:var(--primary);">{s['cur_day']} dagen</span></div>
-                <div class="streak-row"><span class="label">Record Dagelijks:</span><span class="val" style="color:var(--text);">{s['max_day']} dagen</span></div>
-                <div class="streak-sub">{s['max_day_dates']}</div>
+            <div class="sport-body">
+                <div class="stat-main">
+                    <div class="stat-col"><div class="label">Sessies</div><div class="val">{count}</div><div class="sub">{diff_count}</div></div>
+                    <div class="stat-divider"></div>
+                    {dist_html}
+                </div>
+                <div class="sport-details">
+                    <div class="stat-row"><span>Tijd</span> <strong>{format_time(time)}</strong></div>
+                    {extra_stat}
+                    {hr_html}
+                </div>
             </div>
         </div>
-    </div>"""
-
-def create_monthly_charts(df_cur, df_prev, year):
-    months = ['Jan','Feb','Mrt','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
-    def get_m(df, cats): return df[df['Categorie'].isin(cats)].groupby(df['Datum'].dt.month)['Afstand_km'].sum().reindex(range(1,13), fill_value=0)
-    pt = get_m(df_prev, ['Mountainbike', 'Zwift']); cz = get_m(df_cur, ['Zwift']); co = get_m(df_cur, ['Mountainbike'])
-    fb = go.Figure()
-    fb.add_trace(go.Bar(x=months, y=pt, name=f"{year-1}", marker_color=COLORS['ref_gray'], offsetgroup=1))
-    fb.add_trace(go.Bar(x=months, y=cz, name=f"{year} Zwift", marker_color=COLORS['zwift'], offsetgroup=2))
-    fb.add_trace(go.Bar(x=months, y=co, name=f"{year} MTB", marker_color=COLORS['bike_out'], base=cz, offsetgroup=2))
-    fb.update_layout(title='🚴 Mountainbike & Zwift (km)', template='plotly_dark', barmode='group', margin=dict(t=50,b=60,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
-    
-    pr = get_m(df_prev, ['Hardlopen']); cr = get_m(df_cur, ['Hardlopen'])
-    fr = go.Figure()
-    fr.add_trace(go.Bar(x=months, y=pr, name=f"{year-1}", marker_color=COLORS['ref_gray']))
-    fr.add_trace(go.Bar(x=months, y=cr, name=f"{year}", marker_color=COLORS['run']))
-    fr.update_layout(title='🏃 Hardlopen (km)', template='plotly_dark', barmode='group', margin=dict(t=50,b=60,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center"), xaxis=dict(fixedrange=True), yaxis=dict(fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
-    return f'<div class="chart-grid"><div class="chart-box">{fb.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div><div class="chart-box">{fr.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div></div>'
-
-def create_heatmap(df_yr):
-    df_hm = df_yr.copy(); df_hm['Uur'] = df_hm['Datum'].dt.hour; df_hm['Weekdag'] = df_hm['Datum'].dt.day_name()
-    days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-    nl_days = {'Monday':'Ma', 'Tuesday':'Di', 'Wednesday':'Wo', 'Thursday':'Do', 'Friday':'Vr', 'Saturday':'Za', 'Sunday':'Zo'}
-    grouped = df_hm.groupby(['Weekdag', 'Uur']).size().reset_index(name='Aantal')
-    pivot = grouped.pivot(index='Uur', columns='Weekdag', values='Aantal').fillna(0).reindex(columns=days_order)
-    if pivot.empty: return ""
-    fig = go.Figure(data=go.Heatmap(z=pivot.values, x=[nl_days[d] for d in pivot.columns], y=pivot.index, colorscale=[[0, 'rgba(255,255,255,0.03)'], [1, COLORS['bike_out']]], showscale=False))
-    fig.update_layout(title='📅 Hittekaart (Wanneer sport je?)', template='plotly_dark', margin=dict(t=50,b=40,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(title='', range=[6, 23], fixedrange=True), xaxis=dict(fixedrange=True), font=dict(color='#94a3b8'))
-    return f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
-
-def create_strength_freq_chart(df_yr):
-    df_s = df_yr[df_yr['Categorie'] == 'Krachttraining']
-    if df_s.empty: return ""
-    counts = df_s.groupby(df_s['Datum'].dt.month).size().reindex(range(1,13), fill_value=0)
-    months = ['Jan','Feb','Mrt','Apr','Mei','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=months, y=counts, marker_color=COLORS['strength'], text=counts, textposition='auto'))
-    fig.add_shape(type="line", x0=-0.5, y0=8, x1=11.5, y1=8, line=dict(color="rgba(255,255,255,0.2)", width=1, dash="dot"))
-    fig.update_layout(title='🏋️ Kracht (Sessies per maand)', template='plotly_dark', margin=dict(t=50,b=40,l=10,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(title='', fixedrange=True, gridcolor='rgba(255,255,255,0.05)'), xaxis=dict(fixedrange=True), font=dict(color='#94a3b8'))
-    return f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
-
-def create_scatter_plot(df_yr):
-    df_bike = df_yr[df_yr['Categorie'] == 'Mountainbike']; df_zwift = df_yr[df_yr['Categorie'] == 'Zwift']; df_run = df_yr[df_yr['Categorie'] == 'Hardlopen']
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_bike['Afstand_km'], y=df_bike['Gem_Snelheid'], mode='markers', name='MTB', marker=dict(color=COLORS['bike_out'], size=8), text=df_bike['Naam']))
-    fig.add_trace(go.Scatter(x=df_zwift['Afstand_km'], y=df_zwift['Gem_Snelheid'], mode='markers', name='Zwift', marker=dict(color=COLORS['zwift'], size=8), text=df_zwift['Naam']))
-    fig.add_trace(go.Scatter(x=df_run['Afstand_km'], y=df_run['Gem_Snelheid'], mode='markers', name='Loop', marker=dict(color=COLORS['run'], size=8), text=df_run['Naam']))
-    fig.update_layout(title='⚡ Snelheid vs Afstand', template='plotly_dark', margin=dict(t=50,b=60,l=0,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=-0.3, x=0.5, xanchor="center"), xaxis=dict(gridcolor='rgba(255,255,255,0.05)'), yaxis=dict(gridcolor='rgba(255,255,255,0.05)'), font=dict(color='#94a3b8'))
-    return f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
-
-def create_zone_pie(df_yr):
-    df_hr = df_yr[(df_yr['Hartslag'] > 0) & (df_yr['Hartslag'].notna())].copy()
-    if df_hr.empty: return ""
-    df_hr['Zone'] = df_hr['Hartslag'].apply(determine_zone)
-    color_map = {'Z1 Herstel': COLORS['z1'], 'Z2 Duur': COLORS['z2'], 'Z3 Tempo': COLORS['z3'], 'Z4 Drempel': COLORS['z4'], 'Z5 Max': COLORS['z5']}
-    counts = df_hr['Zone'].value_counts().reset_index()
-    fig = go.Figure(data=[go.Pie(labels=counts['Zone'], values=counts['count'], hole=0.6, marker=dict(colors=[color_map.get(z, '#334155') for z in counts['Zone']]))])
-    fig.update_layout(title='❤️ Hartslagzones', template='plotly_dark', margin=dict(t=50,b=40,l=0,r=10), height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#94a3b8'))
-    return f'<div class="chart-box">{fig.to_html(full_html=False, include_plotlyjs="cdn", config=PLOT_CONFIG)}</div>'
-
-def generate_sport_cards(df_yr, df_prev_comp):
-    html = '<div class="sport-grid">'
-    cp = df_yr['Categorie'].unique(); co = ['Mountainbike', 'Zwift', 'Hardlopen', 'Krachttraining', 'Padel', 'Wandelen', 'Zwemmen', 'Overig']
-    cats = [c for c in co if c in cp] + [c for c in cp if c not in co]
-    
-    for cat in cats:
-        df_s = df_yr[df_yr['Categorie'] == cat]; df_p = df_prev_comp[df_prev_comp['Categorie'] == cat] if df_prev_comp is not None else pd.DataFrame()
-        if df_s.empty: continue
-        icon, color = get_sport_style(cat)
-        
-        n=len(df_s); np=len(df_p); d=df_s['Afstand_km'].sum(); dp=df_p['Afstand_km'].sum() if not df_p.empty else 0
-        t=df_s['Beweegtijd_sec'].sum(); tp=df_p['Beweegtijd_sec'].sum() if not df_p.empty else 0
-        hr=df_s['Hartslag'].mean(); wt=df_s['Wattage'].mean() if 'Wattage' in df_s.columns else None
-        cal = df_s['Calorieën'].sum() if 'Calorieën' in df_s.columns else 0
-        
-        spd = f"{(d/(t/3600)):.1f} km/u" if t > 0 and cat not in ['Padel','Krachttraining'] else "-"
-        if cat == 'Hardlopen' and d > 0: spd = f"{int((t/d)//60)}:{int((t/d)%60):02d} /km"
-        
-        rows = f"""<div class="stat-row"><span>Sessies</span><div class="val-group"><strong>{n}</strong>{format_diff_html(n,np)}</div></div>
-                   <div class="stat-row"><span>Tijd</span><div class="val-group"><strong>{format_time(t)}</strong>{format_diff_html(t/3600,tp/3600,"u")}</div></div>"""
-        
-        if cat not in ['Padel','Krachttraining']: 
-            rows += f"""<div class="stat-row"><span>Afstand</span><div class="val-group"><strong>{d:,.0f} km</strong>{format_diff_html(d,dp)}</div></div>
-                        <div class="stat-row"><span>Snelheid</span><strong>{spd}</strong></div>"""
-                        
-        if pd.notna(wt) and wt>0: rows += f'<div class="stat-row"><span>Wattage</span><strong>⚡ {wt:.0f} W</strong></div>'
-        if pd.notna(hr) and hr>0: rows += f'<div class="stat-row"><span>Hartslag</span><strong>❤️ {hr:.0f}</strong></div>'
-        if cal > 0: rows += f'<div class="stat-row"><span>Energie</span><strong>🔥 {cal:,.0f} kcal</strong></div>'
-            
-        html += f"""<div class="sport-card"><div class="sport-header" style="color:{color}"><div class="icon-circle" style="background:rgba(255,255,255,0.05); border:1px solid {color}40;">{icon}</div><h3>{cat}</h3></div><div class="sport-body">{rows}</div></div>"""
-    return html + '</div>'
-
-def generate_yearly_gear(df_yr, df_all, all_time_mode=False):
-    df_g = df_all if all_time_mode else df_yr
-    df_g = df_g.dropna(subset=['Gear']).copy()
-    df_g = df_g[df_g['Gear'].str.strip() != '']
-    if df_g.empty: return '<p style="color:var(--text_light); font-size:13px; padding:20px;">Geen materiaalgegevens bekend.</p>'
-    
-    gears = df_g['Gear'].unique()
-    html = '<div class="kpi-grid">'
-    
-    for g in gears:
-        dy = df_g[df_g['Gear'] == g]
-        ky = dy['Afstand_km'].sum()
-        sy = dy['Beweegtijd_sec'].sum()
-        
-        act_mode = dy['Categorie'].mode()[0] if not dy.empty else 'Mountainbike'
-        icon = '👟' if act_mode in ['Hardlopen', 'Wandelen'] else '🚲'
-        verb = 'Gelopen' if icon == '👟' else 'Gereden'
-        
-        da = df_all[df_all['Gear'] == g]
-        ka = da['Afstand_km'].sum()
-        sa = da['Beweegtijd_sec'].sum()
-        
-        html += f"""
-        <div class="kpi-card" style="display:flex; flex-direction:column; gap:12px;">
-            <div style="display:flex;align-items:center;gap:10px;">
-                <span style="font-size:22px;">{icon}</span>
-                <strong style="font-size:14px; line-height:1.2; color:var(--text);">{g}</strong>
-            </div>
-            
-            <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.05); padding:12px; border-radius:8px;">
-                <div style="font-size:10px; color:var(--text_light); text-transform:uppercase; font-weight:800; margin-bottom:4px; letter-spacing:0.5px;">{verb} {"Totaal" if all_time_mode else "Dit Jaar"}</div>
-                <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                    <span style="font-size:20px; font-weight:800; color:var(--text); font-variant-numeric: tabular-nums;">{ky:,.0f} km</span>
-                    <span style="font-size:13px; color:var(--text_light); font-weight:600;">⏱️ {sy/3600:,.1f} u</span>
-                </div>
-            </div>
-            """
-        
-        if not all_time_mode:
-            html += f"""
-            <div style="padding:4px 8px;">
-                <div style="font-size:10px; color:var(--text_light); text-transform:uppercase; font-weight:700; margin-bottom:4px; letter-spacing:0.5px;">All-Time Totaal</div>
-                <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                    <span style="font-size:15px; font-weight:700; color:var(--text_light); font-variant-numeric: tabular-nums;">{ka:,.0f} km</span>
-                    <span style="font-size:12px; color:var(--text_light); font-weight:600;">{sa/3600:,.1f} u</span>
-                </div>
-            </div>"""
-            
-        html += "</div>"
-    return html + "</div>"
+        """
+    html += '</div>'
+    return html
 
 def generate_hall_of_fame(df):
     html = '<div class="hof-grid">'
-    df_h = df.dropna(subset=['Datum']).copy()
-    for cat in ['Mountainbike', 'Zwift', 'Hardlopen']:
-        df_s = df_h[df_h['Categorie'] == cat]
+    sports = sorted(df['Activiteitstype'].unique())
+    
+    for sport in sports:
+        df_s = df[(df['Activiteitstype'] == sport) & (df['Afstand_km'] > 1.0)]
         if df_s.empty: continue
-        icon, color = get_sport_style(cat)
-        def t3(col,u,pace=False):
-            ds = df_s.sort_values(col, ascending=False).head(3); r=""
-            for i,(_,row) in enumerate(ds.iterrows()):
-                v=row[col]; val=f"{v:.1f} {u}"
-                if pace: val=f"{int((3600/v)//60)}:{int((3600/v)%60):02d} /km"
-                elif u=='W': val=f"{v:.0f} W"
-                
-                r += f"""
-                <div class="top3-item" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:6px;">
-                    <span style="font-weight:600; color:var(--text); font-size:13px;">{"🥇🥈🥉"[i]} {val}</span>
-                    <span class="date" style="font-size:11px; color:var(--text_light); background:rgba(255,255,255,0.05); padding:2px 8px; border-radius:12px;">{row["Datum"].strftime("%d-%m-%y")}</span>
-                </div>"""
-            return r
-        secs = f'<div class="hof-sec"><div class="sec-lbl">Langste Afstand</div>{t3("Afstand_km","km")}</div>'
-        if cat == 'Zwift' and 'Wattage' in df_s.columns: secs += f'<div class="hof-sec" style="margin-top:10px;"><div class="sec-lbl">Hoogste Wattage</div>{t3("Wattage","W")}</div>'
-        else: secs += f'<div class="hof-sec" style="margin-top:10px;"><div class="sec-lbl">Snelste Gem.</div>{t3("Gem_Snelheid","km/u",cat=="Hardlopen")}</div>'
-        html += f"""<div class="hof-card"><div class="hof-header" style="color:{color}; font-size:18px; font-weight:700; display:flex; gap:8px; align-items:center; margin-bottom:15px;">{icon} {cat}</div>{secs}</div>"""
-    return html + '</div>'
+        
+        style = get_sport_style(sport)
+        records = []
+        
+        idx_dist = df_s['Afstand_km'].idxmax()
+        if pd.notna(idx_dist):
+            row = df_s.loc[idx_dist]
+            records.append({'label': 'Langste Afstand', 'val': f"{row['Afstand_km']:.1f} km", 'date': row['Datum'], 'icon': '📏'})
+        
+        if 'Mountainbike' in sport:
+            df_speed = df_s[df_s['Gemiddelde_Snelheid_km_u'] > 10]
+            if not df_speed.empty:
+                idx = df_speed['Gemiddelde_Snelheid_km_u'].idxmax()
+                row = df_speed.loc[idx]
+                records.append({'label': 'Hoogste Gem. Snelheid', 'val': f"{row['Gemiddelde_Snelheid_km_u']:.1f} km/u", 'date': row['Datum'], 'icon': '🚀'})
+        elif 'Wandelen' in sport:
+             df_speed = df_s[(df_s['Gemiddelde_Snelheid_km_u'] > 3) & (df_s['Gemiddelde_Snelheid_km_u'] < 10)]
+             if not df_speed.empty:
+                idx = df_speed['Gemiddelde_Snelheid_km_u'].idxmax()
+                row = df_speed.loc[idx]
+                pace_sec = 3600 / row['Gemiddelde_Snelheid_km_u']
+                pace = f"{int(pace_sec//60)}:{int(pace_sec%60):02d} /km"
+                records.append({'label': 'Snelste Tempo', 'val': pace, 'date': row['Datum'], 'icon': '⚡'})
 
-def generate_logbook(df):
-    rows = ""
-    for _, r in df.sort_values('Datum', ascending=False).iterrows():
-        km = f"{r['Afstand_km']:.1f}" if r['Afstand_km'] > 0 else "-"
-        rows += f"<tr><td>{r['Datum'].strftime('%d-%m')}</td><td>{get_sport_style(r['Categorie'])[0]}</td><td>{r['Naam']}</td><td align='right'><strong>{km}</strong></td></tr>"
-    return f'<div class="chart-box full-width" style="overflow-x:auto;"><table class="log-table" style="min-width:600px;"><thead><tr><th>Datum</th><th>Type</th><th>Naam activiteit</th><th align="right">km</th></tr></thead><tbody>{rows}</tbody></table></div>'
+        idx_time = df_s['Beweegtijd_sec'].idxmax()
+        if pd.notna(idx_time):
+             row = df_s.loc[idx_time]
+             records.append({'label': 'Langste Duur', 'val': format_time(row['Beweegtijd_sec']), 'date': row['Datum'], 'icon': '⏱️'})
+        
+        if not records: continue
 
-def generate_kpi(lbl, val, icon, diff_html, unit=""):
-    val_html = f"{val}"
-    if unit:
-        val_html += f' <span style="font-size: 14px; color: var(--text_light); font-weight: 600;">{unit}</span>'
-        
-    return f"""<div class="kpi-card"><div style="display:flex;justify-content:space-between;"><div class="lbl" style="font-size:12px;color:var(--text_light);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">{lbl}</div><div class="icon" style="font-size:18px;">{icon}</div></div><div class="val" style="font-size:26px;font-weight:800;color:var(--text);margin:8px 0; font-variant-numeric: tabular-nums;">{val_html}</div><div style="font-size:13px;">{diff_html}</div></div>"""
-
-# --- MAIN ---
-def genereer_dashboard():
-    print("🚀 Start V71.0 (Joël Edition - Mountainbike)...")
-    try:
-        df = pd.read_csv('activities.csv')
-        nm = {'Datum van activiteit':'Datum', 'Naam activiteit':'Naam', 'Activiteitstype':'Activiteitstype', 'Beweegtijd':'Beweegtijd_sec', 'Afstand':'Afstand_km', 'Gemiddelde hartslag':'Hartslag', 'Gemiddelde snelheid':'Gem_Snelheid', 'Uitrusting voor activiteit':'Gear', 'Calorieën':'Calorieën'}
-        df = df.rename(columns={k:v for k,v in nm.items() if k in df.columns})
-        
-        for c in ['Afstand_km', 'Beweegtijd_sec', 'Gem_Snelheid', 'Calorieën']:
-            if c in df.columns: df[c] = pd.to_numeric(df[c].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-        df['Hartslag'] = pd.to_numeric(df['Hartslag'], errors='coerce')
-        if 'Wattage' in df.columns: df['Wattage'] = pd.to_numeric(df['Wattage'], errors='coerce')
-        
-        df['Datum'] = df['Datum'].apply(solve_dates); df = df.dropna(subset=['Datum'])
-        
-        # --- JOËL GEAR FIX ---
-        if 'Gear' not in df.columns: df['Gear'] = ''
-        df['Gear'] = df['Gear'].astype(str)
-        
-        is_mtb = df['Activiteitstype'].astype(str).str.lower().str.contains('mountainbike|mtb|fiets|ride|cycle') | df['Naam'].astype(str).str.lower().str.contains('mtb|mountainbike')
-        vanaf_sept_2022 = df['Datum'] >= pd.Timestamp('2022-09-01')
-        
-        df['Gear'] = ''
-        df.loc[is_mtb & vanaf_sept_2022, 'Gear'] = 'E-MTB Trek'
-        
-        df['Categorie'] = df.apply(determine_category, axis=1); df['Jaar'] = df['Datum'].dt.year; df['Day'] = df['Datum'].dt.dayofyear
-        if df['Gem_Snelheid'].mean() < 10: df['Gem_Snelheid'] *= 3.6
-        
-        years = sorted(df['Jaar'].unique(), reverse=True)
-        nav, sects = "", ""
-        
-        for yr in years:
-            df_yr = df[df['Jaar'] == yr]; df_prev = df[df['Jaar'] == yr-1]
-            ytd = datetime.now().timetuple().tm_yday
-            df_prev_comp = df_prev[df_prev['Day'] <= ytd] if yr == datetime.now().year else df_prev
-            
-            streaks_html = generate_streaks_box(df) if yr == datetime.now().year else ""
-            cal_yr = df_yr['Calorieën'].sum() if 'Calorieën' in df_yr.columns else 0
-            cal_prev = df_prev_comp['Calorieën'].sum() if 'Calorieën' in df_prev_comp.columns and not df_prev_comp.empty else 0
-            
-            sects += f"""<div id="v-{yr}" class="tab-content" style="display:{"block" if yr == datetime.now().year else "none"}">
-                <div class="kpi-grid">
-                    {generate_kpi("Sessies", len(df_yr), "👟", format_diff_html(len(df_yr), len(df_prev_comp)))}
-                    {generate_kpi("Afstand", f"{df_yr['Afstand_km'].sum():,.0f}", "📏", format_diff_html(df_yr['Afstand_km'].sum(), df_prev_comp['Afstand_km'].sum(), "km"), unit="km")}
-                    {generate_kpi("Tijd", format_time(df_yr['Beweegtijd_sec'].sum()), "⏱️", format_diff_html(df_yr['Beweegtijd_sec'].sum()/3600, df_prev_comp['Beweegtijd_sec'].sum()/3600, "u"))}
-                    {generate_kpi("Energie", f"{cal_yr:,.0f}", "🔥", format_diff_html(cal_yr, cal_prev, "kcal"), unit="kcal")}
+        rec_html = ""
+        for r in records:
+            rec_html += f"""
+            <div class="hof-record">
+                <div class="hof-icon" style="color:{style['color']}">{r['icon']}</div>
+                <div class="hof-data">
+                    <div class="hof-label">{r['label']}</div>
+                    <div class="hof-val">{r['val']}</div>
+                    <div class="hof-date">{r['date'].strftime('%d %b %Y')}</div>
                 </div>
-                {streaks_html}
-                {create_ytd_chart(df, yr)}
-                <h3 class="sec-sub">Per Sport</h3>{generate_sport_cards(df_yr, df_prev_comp)}
-                <h3 class="sec-sub">Materiaal {yr}</h3>{generate_yearly_gear(df_yr, df)}
-                <h3 class="sec-sub">Maandelijkse Voortgang</h3>{create_monthly_charts(df_yr, df_prev, yr)}
-                <h3 class="sec-sub">Diepte-analyse</h3>
-                <div class="chart-grid">{create_scatter_plot(df_yr)}{create_zone_pie(df_yr)}</div>
-                <div class="chart-grid">{create_heatmap(df_yr)}{create_strength_freq_chart(df_yr)}</div>
-                <h3 class="sec-sub">Records {yr}</h3>{generate_hall_of_fame(df_yr)}
-                <h3 class="sec-sub">Logboek</h3>{generate_logbook(df_yr)}
             </div>"""
-            nav += f'<button class="nav-btn {"active" if yr == datetime.now().year else ""}" onclick="openTab(event, \'v-{yr}\')">{yr}</button>'
+        html += f"""<div class="hof-card"><div class="hof-header"><h3 style="color:{style['color']}">{style['icon']} {sport}</h3></div><div class="hof-body">{rec_html}</div></div>"""
+    html += "</div>"
+    return html
+
+def generate_gear_section(df):
+    if 'Uitrusting voor activiteit' not in df.columns:
+        return "<p style='text-align:center; color:#999'>Geen uitrusting data gevonden.</p>"
+    
+    df_gear = df.copy()
+    df_gear['Uitrusting voor activiteit'] = df_gear['Uitrusting voor activiteit'].fillna('').astype(str)
+    
+    df_gear = df_gear[
+        (df_gear['Uitrusting voor activiteit'].str.strip() != '') & 
+        (df_gear['Uitrusting voor activiteit'].str.lower() != 'nan')
+    ]
+
+    if df_gear.empty:
+         return "<p style='text-align:center; color:#999'>Nog geen uitrusting gebruikt.</p>"
+
+    gear_stats = df_gear.groupby('Uitrusting voor activiteit').agg(
+        Aantal=('Activiteitstype', 'count'),
+        Afstand=('Afstand_km', 'sum'),
+        Laatste_Gebruik=('Datum', 'max'),
+        Type=('Activiteitstype', lambda x: x.mode()[0] if not x.mode().empty else 'Onbekend')
+    ).reset_index()
+    
+    gear_stats = gear_stats.sort_values('Afstand', ascending=False)
+    
+    html = '<div class="kpi-grid">'
+    for _, row in gear_stats.iterrows():
+        gear_name = row['Uitrusting voor activiteit']
+        icon = '🚲' if 'Mountainbike' in str(row['Type']) else '🥾'
+        
+        max_dist = 10000 if icon == '🚲' else 1000
+        pct = min(100, (row['Afstand'] / max_dist) * 100)
+        color = COLORS['success'] if pct < 50 else (COLORS['gold'] if pct < 80 else COLORS['danger'])
+        
+        html += f"""
+        <div class="kpi-card" style="display:block;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:24px;">{icon}</span>
+                    <div style="font-weight:700; color:{COLORS['text']}">{gear_name}</div>
+                </div>
+                <div style="font-size:12px; color:{COLORS['text_light']}">{row['Laatste_Gebruik'].strftime('%d-%m-%y')}</div>
+            </div>
+            <div style="font-size:20px; font-weight:700; margin-bottom:5px;">{row['Afstand']:,.0f} km</div>
+            <div style="background:#e2e8f0; height:6px; border-radius:3px; overflow:hidden;">
+                <div style="width:{pct}%; background:{color}; height:100%;"></div>
+            </div>
+            <div style="font-size:11px; color:{COLORS['text_light']}; margin-top:4px;">{row['Aantal']}x gebruikt</div>
+        </div>
+        """
+    html += '</div>'
+    return html
+
+def genereer_manifest():
+    manifest = {
+        "name": "Sport Jorden",
+        "short_name": "Sport",
+        "start_url": "./dashboard.html",
+        "display": "standalone",
+        "background_color": "#f8fafc",
+        "theme_color": "#0f172a",
+        "icons": [{"src": "icon.png", "sizes": "512x512", "type": "image/png"}]
+    }
+    with open('manifest.json', 'w') as f: json.dump(manifest, f)
+
+def genereer_dashboard(csv_input='activities.csv', html_output='dashboard.html'):
+    print("🚀 Start Generatie V10 (Focus MTB & Wandelen)...")
+    try:
+        df = pd.read_csv(csv_input)
+    except:
+        print("❌ CSV niet gevonden.")
+        return
+
+    df = df.rename(columns={
+        'Datum van activiteit': 'Datum', 'Naam activiteit': 'Naam', 
+        'Activiteitstype': 'Activiteitstype', 'Beweegtijd': 'Beweegtijd_sec',
+        'Afstand': 'Afstand_km', 'Totale stijging': 'Hoogte_m',
+        'Gemiddelde hartslag': 'Gemiddelde_Hartslag',
+        'Gemiddelde snelheid': 'Gemiddelde_Snelheid_km_u',
+        'Max. snelheid': 'Max_Snelheid_km_u',
+        'Uitrusting voor activiteit': 'Uitrusting voor activiteit'
+    })
+    
+    cols = ['Afstand_km', 'Hoogte_m', 'Gemiddelde_Snelheid_km_u', 'Gemiddelde_Hartslag', 'Max_Snelheid_km_u']
+    for c in cols:
+        if c in df.columns and df[c].dtype == object:
+            df[c] = pd.to_numeric(df[c].astype(str).str.replace(',', '.'), errors='coerce')
             
-        nav += '<button class="nav-btn" onclick="openTab(event, \'v-Tot\')">Carrière</button>'
-        sects += f'<div id="v-Tot" class="tab-content" style="display:none"><h2 class="sec-title" style="color:var(--text);">All-Time Garage</h2>{generate_yearly_gear(df, df, True)}<h3 class="sec-sub">All-Time Records</h3>{generate_hall_of_fame(df)}</div>'
+    if df['Gemiddelde_Snelheid_km_u'].mean() < 8: 
+        df['Gemiddelde_Snelheid_km_u'] *= 3.6
+        if 'Max_Snelheid_km_u' in df.columns: df['Max_Snelheid_km_u'] *= 3.6
+
+    # --- NIEUWE LOGICA MTB & WANDELEN ---
+    
+    # 1. Filter Zwift en Hardlopen volledig eruit
+    mask_exclude = df['Activiteitstype'].str.contains('Virtuele|Virtueel|Zwift|Hardloop|Run', case=False, na=False)
+    df = df[~mask_exclude]
+
+    # 2. Alles met 'rit', 'ochtendrit', 'fiets' wordt Mountainbike, en krijgt 'Emtb trek' als uitrusting
+    mask_mtb = df['Naam'].str.contains('rit|ochtend|fiets|mountainbike|mtb', case=False, na=False) | \
+               df['Activiteitstype'].str.contains('fiets|ride|mountainbike|mtb', case=False, na=False)
+    df.loc[mask_mtb, 'Activiteitstype'] = 'Mountainbike'
+    df.loc[mask_mtb, 'Uitrusting voor activiteit'] = 'Emtb trek'
+
+    # 3. Wandel/Hike samenvoegen tot 'Wandelen'
+    mask_wandel = df['Activiteitstype'].str.contains('wandel|hike|walk', case=False, na=False)
+    df.loc[mask_wandel, 'Activiteitstype'] = 'Wandelen'
+
+    # 4. Verwijder alle andere overgebleven sporten (zoals Padel, Zwemmen)
+    df = df[df['Activiteitstype'].isin(['Mountainbike', 'Wandelen'])]
+    
+    # -------------------------------------
+
+    df['Datum'] = robust_date_parser(df['Datum'])
+    df['Jaar'] = df['Datum'].dt.year
+    df['DagVanJaar'] = df['Datum'].dt.dayofyear
+    
+    now = datetime.now()
+    huidig_jaar = now.year
+    max_datum = df['Datum'].max()
+    ytd_day = max_datum.dayofyear if max_datum.year == huidig_jaar else 366
+
+    genereer_manifest()
+
+    nav_html = ""
+    sections_html = ""
+    jaren = sorted(df['Jaar'].unique(), reverse=True)
+    
+    for jaar in jaren:
+        is_cur = (jaar == max_datum.year)
+        df_j = df[df['Jaar'] == jaar]
         
-        html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>⚡ Sportoverzicht Joël</title>
+        prev = jaar - 1
+        df_prev_all = df[df['Jaar'] == prev]
+        df_prev_ytd = df_prev_all[df_prev_all['DagVanJaar'] <= ytd_day] if is_cur else df_prev_all
         
-        <link rel="manifest" href="manifest.json">
-        <link rel="icon" type="image/png" href="icon.png">
-        <link rel="apple-touch-icon" href="icon.png">
-        <meta name="theme-color" content="#0b0914">
+        sc = {'n': len(df_j), 'km': df_j['Afstand_km'].sum(), 'h': df_j['Hoogte_m'].sum(), 't': df_j['Beweegtijd_sec'].sum()}
+        sp = {'n': len(df_prev_ytd), 'km': df_prev_ytd['Afstand_km'].sum(), 'h': df_prev_ytd['Hoogte_m'].sum(), 't': df_prev_ytd['Beweegtijd_sec'].sum()}
+        
+        time_diff_hours = (sc['t'] - sp['t']) / 3600
+        
+        kpis = f"""<div class="kpi-grid">
+            {generate_kpi("Sessies", sc['n'], "🔥", format_diff_html(sc['n'], sp['n']))}
+            {generate_kpi("Afstand", f"{sc['km']:,.0f} km", "📏", format_diff_html(sc['km'], sp['km'], "km"))}
+            {generate_kpi("Hoogtemeters", f"{sc['h']:,.0f} m", "⛰️", format_diff_html(sc['h'], sp['h'], "m"))}
+            {generate_kpi("Tijd", format_time(sc['t']), "⏱️", format_diff_html(time_diff_hours, 0, "u"))}
+        </div>"""
+        
+        df_cum = df_j.sort_values('DagVanJaar')[['DagVanJaar', 'Afstand_km']].copy()
+        df_cum['Cum'] = df_cum['Afstand_km'].cumsum()
+        df_cum_p = df_prev_all.sort_values('DagVanJaar')[['DagVanJaar', 'Afstand_km']].copy()
+        df_cum_p['Cum'] = df_cum_p['Afstand_km'].cumsum()
+        
+        fig = px.line(title=f"Koersverloop {jaar}")
+        fig.add_scatter(x=df_cum['DagVanJaar'], y=df_cum['Cum'], name=f"{jaar}", line_color=COLORS['chart_main'], line_width=3)
+        if not df_cum_p.empty:
+            fig.add_scatter(x=df_cum_p['DagVanJaar'], y=df_cum_p['Cum'], name=f"{prev}", line_color=COLORS['chart_sec'], line_dash='dot')
+        fig.update_layout(template='plotly_white', margin=dict(t=40,l=20,r=20,b=20), height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=1.1, x=0))
+
+        nav_html += f'<button class="nav-btn {"active" if is_cur else ""}" onclick="openTab(event, \'view-{jaar}\')">{jaar}</button>'
+        
+        sections_html += f"""
+        <div id="view-{jaar}" class="tab-content" style="display: {'block' if is_cur else 'none'};">
+            <h2 class="section-title">Overzicht {jaar}</h2>
+            {kpis}
+            <h3 class="section-subtitle">Per Sport</h3>
+            {generate_sport_cards(df_j, df_prev_ytd)}
+            <h3 class="section-subtitle">Analyse</h3>
+            <div class="chart-box full-width">{fig.to_html(full_html=False, include_plotlyjs='cdn')}</div>
+        </div>
+        """
+
+    nav_html += '<button class="nav-btn" onclick="openTab(event, \'view-Total\')">Totaal</button>'
+    tk_n = len(df); tk_km = df['Afstand_km'].sum(); tk_time = df['Beweegtijd_sec'].sum()
+    sections_html += f"""<div id="view-Total" class="tab-content" style="display:none;">
+        <h2 class="section-title">Carrière</h2>
+        <div class="kpi-grid">
+            {generate_kpi("Totaal Sessies", tk_n, "🏆")}
+            {generate_kpi("Totaal Km", f"{tk_km:,.0f} km", "🌍")}
+            {generate_kpi("Totaal Tijd", format_time(tk_time), "⏱️")}
+        </div>
+        {generate_sport_cards(df, None)}
+    </div>"""
+
+    nav_html += '<button class="nav-btn" onclick="openTab(event, \'view-Garage\')">Garage</button>'
+    sections_html += f"""<div id="view-Garage" class="tab-content" style="display:none;">
+        <h2 class="section-title">De Garage</h2>
+        {generate_gear_section(df)}
+    </div>"""
+
+    nav_html += '<button class="nav-btn" onclick="openTab(event, \'view-HOF\')">Records</button>'
+    sections_html += f"""<div id="view-HOF" class="tab-content" style="display:none;">
+        <h2 class="section-title">Eregalerij</h2>
+        {generate_hall_of_fame(df)}
+    </div>"""
+
+    opt = "".join([f'<option value="{s}">{s}</option>' for s in sorted(df['Activiteitstype'].unique())])
+    rows = ""
+    for _, row in df.sort_values('Datum', ascending=False).iterrows():
+        st = get_sport_style(row['Activiteitstype'])
+        hr = f"{row['Gemiddelde_Hartslag']:.0f}" if pd.notna(row['Gemiddelde_Hartslag']) else "-"
+        rows += f"""<tr data-sport="{row['Activiteitstype']}"><td><div style="width:8px;height:8px;border-radius:50%;background:{st['color']}"></div></td>
+        <td>{row['Datum'].strftime('%d-%m-%y')}</td><td>{row['Activiteitstype']}</td><td>{row['Naam']}</td>
+        <td class="num">{row['Afstand_km']:.1f}</td><td class="num hr-blur">{hr}</td></tr>"""
+
+    detail_html = f"""<div class="detail-section"><div class="detail-header"><h3>Logboek</h3>
+    <select id="sf" onchange="filterTable()"><option value="ALL">Alles</option>{opt}</select></div>
+    <div style="overflow-x:auto"><table id="dt"><thead><tr><th></th><th>Datum</th><th>Sport</th><th>Naam</th><th class="num">Km</th><th class="num">❤️</th></tr></thead>
+    <tbody>{rows}</tbody></table></div></div>"""
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="nl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-        
-        <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+        <link rel="manifest" href="manifest.json">
+        <link rel="apple-touch-icon" href="icon.png">
+        <title>Sportoverzicht Jorden</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
-        :root{{--primary:#00e5ff;--bg:#0b0914;--card:#1e1b4b;--text:#f8fafc;--text_light:#94a3b8;}}
-        * {{ box-sizing: border-box; }}
-        body{{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--text);margin:0;padding:20px 0;}}
-        .container{{width:96%; max-width:1400px; margin:0 auto;}}
-        
-        .header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}}
-        
-        .nav{{display:flex;gap:8px;overflow-x:auto;padding:10px 0;scrollbar-width:none;position:sticky;top:0;z-index:100;background:var(--bg);}}
-        .nav-btn{{font-family:inherit;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer; color:var(--text_light); transition:0.2s; flex-shrink: 0;}}
-        .nav-btn.active{{background:linear-gradient(45deg, #ff007f, #00e5ff);color:white; border:none; box-shadow:0 4px 15px rgba(0,229,255,0.2);}}
-        
-        .kpi-grid, .sport-grid, .hof-grid, .chart-grid {{display:grid; gap:12px; margin-bottom:20px; width: 100%;}}
-        .kpi-grid{{grid-template-columns:repeat(2, 1fr);}} 
-        @media(min-width:768px){{.kpi-grid{{grid-template-columns:repeat(4, 1fr);}}}}
-        .sport-grid, .hof-grid{{grid-template-columns:repeat(auto-fit,minmax(280px,1fr));}}
-        .chart-grid{{grid-template-columns:repeat(auto-fit,minmax(280px,1fr));}}
-        
-        .kpi-card, .sport-card, .hof-card, .chart-box, .streaks-section {{
-            background:linear-gradient(145deg, #1e1b4b, #151236); 
-            padding:15px; 
-            border-radius:16px; 
-            border:1px solid rgba(255,255,255,0.05); 
-            box-shadow:0 4px 10px rgba(0,0,0,0.3);
-            width: 100%;
-        }}
-        .chart-box, .chart-grid {{ max-width: 100%; overflow-x: hidden; }}
-        .chart-box.full-width {{ margin-bottom: 25px; width: 100%; }}
-        .streaks-section {{ margin-bottom: 25px; width: 100%; }}
-        
-        .sec-title {{font-size:22px;font-weight:800;letter-spacing:-0.5px;margin:0 0 15px 0;color:var(--text)}}
-        .sec-sub{{font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:35px 0 10px 0;border-bottom:2px solid rgba(255,255,255,0.05);padding-bottom:5px;color:var(--primary);font-weight:800; display:inline-block;}}
-        .sec-lbl{{font-size:10px;text-transform:uppercase;color:var(--text_light);font-weight:700;margin-top:5px;}}
-        .box-title{{font-size:11px;color:var(--text_light);text-transform:uppercase;margin-bottom:12px;letter-spacing:0.5px;font-weight:700}}
-        
-        .stat-row{{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px; color:var(--text_light); font-weight:500; align-items:center;}}
-        .stat-row strong{{color:var(--text); font-weight:700}}
-        .val-group{{display:flex;gap:8px;align-items:center}}
-        
-        .log-table{{width:100%;border-collapse:collapse;font-size:12px;}} .log-table th{{text-align:left;padding:12px 10px;border-bottom:1px solid rgba(255,255,255,0.05);color:var(--text_light);font-weight:700;}} .log-table td{{padding:12px 10px;border-bottom:1px solid rgba(255,255,255,0.02);font-weight:500; color:var(--text);}}
-        .streak-row{{display:flex;justify-content:space-between;font-size:14px;font-weight:700;color:var(--text); margin-bottom:4px;}}
-        .streak-sub{{font-size:11px;color:var(--text_light);}}
-        .icon-circle{{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;}}
-        </style></head><body><div class="container">
-        <div class="header"><h1 style="font-size:28px;font-weight:800;letter-spacing:-1px;margin:0; background: -webkit-linear-gradient(45deg, #ff007f, #00e5ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">⚡ Sportoverzicht Joël</h1></div>
-        <div class="nav">{nav}</div>{sects}</div>
-        <script>
-        function openTab(e,n){{
-            document.querySelectorAll('.tab-content').forEach(x=>x.style.display='none');
-            document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
-            document.getElementById(n).style.display='block';
-            e.currentTarget.classList.add('active');
-            window.scrollTo({{top:0, behavior:'smooth'}});
-            setTimeout(() => {{ window.dispatchEvent(new Event('resize')); }}, 50);
-        }}
-        </script></body></html>"""
-        
-        with open('dashboard.html', 'w', encoding='utf-8') as f: f.write(html)
-        print("✅ Dashboard (V71.0) voor Joël succesvol gegenereerd!")
-    except Exception as e: print(f"❌ Fout: {e}")
+            :root {{ --primary: {COLORS['primary']}; --gold: {COLORS['gold']}; --bg: {COLORS['bg']}; --card: {COLORS['card']}; --text: {COLORS['text']}; }}
+            body {{ font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; padding-bottom: 80px; -webkit-tap-highlight-color: transparent; }}
+            .container {{ max-width: 1000px; margin: 0 auto; }}
+            
+            h1 {{ margin: 0; font-size: 26px; font-weight: 700; color: var(--primary); letter-spacing:-0.5px; display:flex; align-items:center; gap:10px; }}
+            h1::after {{ content:''; display:block; width:50px; height:3px; background:var(--gold); margin-left:15px; border-radius:2px; opacity:0.6; }}
+            
+            .header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-top: 10px; }}
+            .lock-btn {{ background: white; border: 1px solid #cbd5e1; padding: 8px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; color: #64748b; transition:0.2s; }}
+            .lock-btn:hover {{ border-color:var(--gold); color:var(--primary); }}
+            
+            .nav {{ display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px; margin-bottom: 25px; scrollbar-width: none; }}
+            .nav::-webkit-scrollbar {{ display: none; }}
+            .nav-btn {{ flex: 0 0 auto; background: white; border: 1px solid #e2e8f0; padding: 8px 18px; border-radius: 20px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; transition: 0.2s; }}
+            .nav-btn.active {{ background: var(--primary); color: white; border-color: var(--primary); box-shadow: 0 4px 10px rgba(15, 23, 42, 0.2); }}
+            
+            .kpi-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 30px; }}
+            .sport-grid, .hof-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 30px; }}
+            
+            .kpi-card, .sport-card, .hof-card, .chart-box, .detail-section {{ background: var(--card); border-radius: 16px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); border:1px solid #f1f5f9; }}
+            
+            .sport-header {{ display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }}
+            .sport-icon-circle {{ width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; }}
+            .sport-header h3 {{ margin:0; font-size:18px; font-weight:700; color:var(--text); }}
+            
+            .stat-main {{ display: flex; margin-bottom: 16px; }}
+            .stat-col {{ flex: 1; }} 
+            .stat-divider {{ width: 1px; background: #e2e8f0; margin: 0 15px; }}
+            .label {{ font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 700; }}
+            .val {{ font-size: 22px; font-weight: 700; color:var(--primary); }}
+            .sub {{ font-size: 12px; margin-top: 2px; }}
+            
+            .sport-details {{ background: #f8fafc; padding: 12px; border-radius: 12px; font-size: 13px; }}
+            .stat-row {{ display: flex; justify-content: space-between; margin-bottom: 6px; color:#64748b; }}
+            .stat-row strong {{ color:var(--text); }}
+            
+            .hof-header {{ border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; margin-bottom: 10px; font-weight: 700; }}
+            .hof-record {{ display: flex; gap: 12px; margin-bottom: 12px; align-items:center; }}
+            .hof-icon {{ font-size:18px; width:24px; text-align:center; }}
+            .hof-data {{ flex: 1; }}
+            .hof-val {{ font-weight: 700; font-size: 15px; color: var(--primary); }}
+            .hof-label {{ font-size:11px; text-transform:uppercase; color:#94a3b8; font-weight:600; }}
+            .hof-date {{ font-size:11px; color:#94a3b8; }}
 
-if __name__ == "__main__": genereer_dashboard()
+            .detail-header {{ display: flex; justify-content: space-between; margin-bottom: 15px; }}
+            table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+            th {{ text-align: left; color: #94a3b8; font-size: 11px; text-transform: uppercase; padding: 12px 10px; font-weight:700; }}
+            td {{ padding: 14px 10px; border-bottom: 1px solid #f1f5f9; }}
+            .num {{ text-align: right; font-weight:600; }}
+            .hr-blur {{ filter: blur(5px); transition: 0.3s; background: #e2e8f0; border-radius: 4px; color: transparent; user-select: none; }}
+            
+            .full-width {{ grid-column: 1 / -1; }}
+            .section-title {{ font-size: 18px; font-weight: 700; margin-bottom: 20px; color: var(--primary); }}
+            .section-subtitle {{ font-size: 13px; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin: 30px 0 15px 0; letter-spacing:0.5px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Sportoverzicht Jorden</h1>
+                <button class="lock-btn" onclick="unlock()">❤️ Hartslag 🔒</button>
+            </div>
+            
+            <div class="nav">{nav_html}</div>
+            
+            {sections_html}
+            {detail_html}
+        </div>
+        
+        <script>
+            function openTab(evt, name) {{
+                document.querySelectorAll('.tab-content').forEach(x => x.style.display = 'none');
+                document.querySelectorAll('.nav-btn').forEach(x => x.classList.remove('active'));
+                document.getElementById(name).style.display = 'block';
+                evt.currentTarget.classList.add('active');
+            }}
+            function filterTable() {{
+                var val = document.getElementById('sf').value;
+                document.querySelectorAll('#dt tbody tr').forEach(tr => {{
+                    tr.style.display = (val === 'ALL' || tr.dataset.sport === val) ? '' : 'none';
+                }});
+            }}
+            function unlock() {{
+                var p = prompt("Wachtwoord (Tip: Niet Gust):");
+                if(p === 'Nala') {{
+                    document.querySelectorAll('.hr-blur').forEach(e => {{
+                        e.style.filter = 'none'; e.style.color = 'inherit'; e.style.background = 'transparent';
+                    }});
+                    document.querySelector('.lock-btn').style.display = 'none';
+                }}
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    
+    with open(html_output, 'w', encoding='utf-8') as f:
+        f.write(html)
+    print("✅ Luxe Dashboard gereed met uitsluitend Mountainbike & Wandelen!")
+
+if __name__ == "__main__":
+    genereer_dashboard()
